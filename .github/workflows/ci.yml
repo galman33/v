@@ -212,6 +212,7 @@ jobs:
       - name: Build examples with -autofree
         run: |
           ./v -autofree -o tetris examples/tetris/tetris.v
+          ./v -autofree vlib/v/tests/option_test.v
       - name: v doctor
         run: |
           ./v doctor
