@@ -3,8 +3,6 @@
 // that can be found in the LICENSE file.
 module time
 
-#include <time.h>
-
 pub const (
 	days_string        = 'MonTueWedThuFriSatSun'
 	month_days         = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -13,10 +11,31 @@ pub const (
 	// Must be 1 mod 400, and times before it will not compute correctly,
 	// but otherwise can be changed at will.
 	absolute_zero_year = i64(-292277022399) // as i64
+	// The year of the zero Time.
+	// Assumed by the unix_to_internal computation below.
+	internal_year = 1
+	// Offsets to convert between internal and absolute or Unix times.
+	absolute_to_internal = i64(absolute_zero_year - internal_year) * i64(365.2425 * f64(seconds_per_day))
+	internal_to_absolute       = -absolute_to_internal
+	unix_to_internal = i64(1969*365 + 1969/4 - 1969/100 + 1969/400) * seconds_per_day
+	internal_to_unix = -unix_to_internal
+	/*microseconds_per_millisecond = i64(1000)
+	microseconds_per_second = i64(1000) * microseconds_per_millisecond
+	microseconds_per_minute = i64(160) * microseconds_per_second
+	microseconds_per_hour   = i64(160) * microseconds_per_minute
+	microseconds_per_day    = i64(124) * microseconds_per_hour
+	microseconds_per_week   = i64(17) * microseconds_per_day*/
+	microseconds_per_millisecond = i64(1000)
+	microseconds_per_second = i64(1000) * i64(1000)
+	microseconds_per_minute = i64(1000) * i64(1000) * i64(60)
+	microseconds_per_hour   = i64(1000) * i64(1000) * i64(60) * i64(60)
+	microseconds_per_day    = i64(1000) * i64(1000) * i64(60) * i64(60) * i64(24)
+	microseconds_per_week   = i64(1000) * i64(1000) * i64(60) * i64(60) * i64(24) * i64(7)
+
 	seconds_per_minute = 60
-	seconds_per_hour   = 60 * seconds_per_minute
-	seconds_per_day    = 24 * seconds_per_hour
-	seconds_per_week   = 7 * seconds_per_day
+	seconds_per_hour   = 60 * 60
+	seconds_per_day    = 60 * 60 * 24
+	
 	days_per_400_years = 365 * 400 + 97
 	days_per_100_years = 365 * 100 + 24
 	days_per_4_years   = 365 * 4 + 1
@@ -40,6 +59,10 @@ pub const (
 
 // Time contains various time units for a point in time.
 pub struct Time {
+	unix_microseconds	i64
+}
+
+pub struct Date {
 pub:
 	year        int
 	month       int
@@ -48,7 +71,6 @@ pub:
 	minute      int
 	second      int
 	microsecond int
-	unix        u64
 }
 
 // FormatDelimiter contains different time formats.
@@ -84,105 +106,196 @@ pub enum FormatDelimiter {
 	no_delimiter
 }
 
-// C.timeval represents a C time value.
-pub struct C.timeval {
-	tv_sec  u64
-	tv_usec u64
-}
-
-fn C.localtime(t &C.time_t) &C.tm
-
-fn C.time(t &C.time_t) C.time_t
-
 // now returns current local time.
 pub fn now() Time {
-	$if macos {
-		return darwin_now()
-	}
-	$if windows {
-		return win_now()
-	}
-	$if solaris {
-		return solaris_now()
-	}
-	$if linux || android {
-		return linux_now()
-	}
-	// defaults to most common feature, the microsecond precision is not available
-	// in this API call
-	t := C.time(0)
-	now := C.localtime(&t)
-	return convert_ctime(now, 0)
+	return Time{os_unix_time_microseconds() + offset() * microseconds_per_second}
 }
 
 // utc returns the current UTC time.
 pub fn utc() Time {
-	$if macos {
-		return darwin_utc()
+	return Time{os_unix_time_microseconds()}
+}
+
+pub fn (t Time) year() int {
+	year, _, _ := abs_seconds_to_date(t.abs_seconds())
+	return year
+}
+
+pub fn (t Time) month() int {
+	_, month, _ := abs_seconds_to_date(t.abs_seconds())
+	return month
+}
+
+pub fn (t Time) day() int {
+	_, _, day := abs_seconds_to_date(t.abs_seconds())
+	return day
+}
+
+pub fn (t Time) date() Date {
+	year, month, day := abs_seconds_to_date(t.abs_seconds())
+	return Date{
+		year: year
+		month: month
+		day: day
+		hour: t.hour()
+		minute: t.minute()
+		second: t.second()
+		microsecond: t.microsecond()
 	}
-	$if windows {
-		return win_utc()
+}
+
+fn calc_time(microseconds i64, high i64, low i64, mod int) int {
+	result := int(microseconds % high / low)
+	if result < 0 {
+		return result + mod
+	} else {
+		return result
 	}
-	$if solaris {
-		return solaris_utc()
+}
+
+pub fn (t Time) hour() int {
+	return int(t.abs_seconds() % seconds_per_day) / seconds_per_hour
+}
+
+pub fn (t Time) minute() int {
+	return int(t.abs_seconds() % seconds_per_hour) / seconds_per_minute
+}
+
+pub fn (t Time) second() int {
+	return int(t.abs_seconds() % seconds_per_minute)
+}
+
+pub fn (t Time) microsecond() int {
+	result := int(t.unix_microseconds % microseconds_per_second)
+	if result < 0 {
+		return result + int(microseconds_per_second)
+	} else {
+		return result
 	}
-	$if linux || android {
-		return linux_utc()
-	}
-	// defaults to most common feature, the microsecond precision is not available
-	// in this API call
-	t := C.time(0)
-	_ = C.time(&t)
-	return unix2(int(t), 0)
+}
+
+fn (t Time) abs_seconds() u64 {
+	return u64(t.unix() + (unix_to_internal + internal_to_absolute))
 }
 
 // smonth returns month name.
 pub fn (t Time) smonth() string {
-	if t.month <= 0 || t.month > 12 {
+	month := t.month()
+	if month <= 0 || month > 12 {
 		return '---'
 	}
-	i := t.month - 1
+	i := month - 1
 	return time.months_string[i * 3..(i + 1) * 3]
 }
 
 // new_time returns a time struct with calculated Unix time.
-pub fn new_time(t Time) Time {
-	if t.unix != 0 {
-		return t
+pub fn new_time(date Date) Time {
+	mut year, mut month, mut day, mut h, mut min, mut sec, mut msec := date.year, date.month, date.day, date.hour, date.minute, date.second, date.microsecond
+
+	// Normalize month, overflowing into year.
+	mut m := month - 1
+	year, m = norm(year, m, 12)
+	month = m + 1
+
+	// Normalize nsec, sec, min, hour, overflowing into day.
+	sec, msec = norm(sec, msec, 1000000)
+	min, sec = norm(min, sec, 60)
+	h, min = norm(h, min, 60)
+	day, h = norm(day, h, 24)
+
+	// Compute days since the absolute epoch.
+	mut d := days_since_epoch(year)
+
+	// Add in days before this month.
+	d += days_before[month-1]
+	if is_leap_year(year) && month >= 3 {
+		d++ // February 29
 	}
-	tt := C.tm{
-		tm_sec: t.second
-		tm_min: t.minute
-		tm_hour: t.hour
-		tm_mday: t.day
-		tm_mon: t.month - 1
-		tm_year: t.year - 1900
-	}
-	utime := u64(make_unix_time(tt))
-	return Time{
-		...t
-		unix: utime
-	}
+
+	// Add in days before today.
+	d += day - 1
+
+	// Add in time elapsed today.
+	mut abs_microseconds := d * microseconds_per_day +
+		h * microseconds_per_hour + 
+		min * microseconds_per_minute +
+		sec * microseconds_per_second +
+		msec
+
+	unix_microseconds := abs_microseconds + (absolute_to_internal + internal_to_unix) * microseconds_per_second
+
+	return Time{unix_microseconds}
 }
 
-// unix_time returns Unix time.
-[inline]
-pub fn (t Time) unix_time() int {
-	return int(t.unix)
+// norm returns nhi, nlo such that
+//	hi * base + lo == nhi * base + nlo
+//	0 <= nlo < base
+fn norm(hi int, lo int, base int) (int, int) {
+	mut out_hi, mut out_lo := hi, lo
+	if out_lo < 0 {
+		n := (-out_lo-1)/base + 1
+		out_hi -= n
+		out_lo += n * base
+	}
+	if out_lo >= base {
+		n := out_lo / base
+		out_hi += n
+		out_lo -= n * base
+	}
+	return out_hi, out_lo
 }
 
-// unix_time_milli returns Unix time with millisecond resolution.
+
+// daysSinceEpoch takes a year and returns the number of days from
+// the absolute epoch to the start of that year.
+// This is basically (year - zeroYear) * 365, but accounting for leap days.
+fn days_since_epoch(year int) i64 {
+	mut y := i64(year) - absolute_zero_year
+
+	// Add in days from 400-year cycles.
+	mut n := y / 400
+	y -= 400 * n
+	mut d := days_per_400_years * n
+
+	// Add in 100-year cycles.
+	n = y / 100
+	y -= 100 * n
+	d += days_per_100_years * n
+
+	// Add in 4-year cycles.
+	n = y / 4
+	y -= 4 * n
+	d += days_per_4_years * n
+
+	// Add in non-leap years.
+	n = y
+	d += 365 * n
+
+	return d
+}
+
+// unix returns Unix time.
 [inline]
-pub fn (t Time) unix_time_milli() u64 {
-	return t.unix * 1000 + u64(t.microsecond / 1000)
+pub fn (t Time) unix() int {
+	return int(t.unix_microseconds / microseconds_per_second)
+}
+
+// unix_milli returns Unix time with millisecond resolution.
+[inline]
+pub fn (t Time) unix_milli() i64 {
+	return t.unix_microseconds / microseconds_per_millisecond
+}
+
+// unix_micro returns Unix time with microsecond resolution.
+[inline]
+pub fn (t Time) unix_micro() i64 {
+	return t.unix_microseconds
 }
 
 // add returns a new time that duration is added
 pub fn (t Time) add(d Duration) Time {
-	microseconds := i64(t.unix) * 1000 * 1000 + t.microsecond + d.microseconds()
-	unix := microseconds / (1000 * 1000)
-	micro := microseconds % (1000 * 1000)
-	return unix2(int(unix), int(micro))
+	unix_microseconds := t.unix_microseconds + d.microseconds()
+	return Time{unix_microseconds}
 }
 
 // add_seconds returns a new time struct with an added number of seconds.
@@ -205,7 +318,7 @@ fn since(t Time) int {
 // and the current time.
 pub fn (t Time) relative() string {
 	znow := now()
-	secs := znow.unix - t.unix
+	secs := (znow.unix_microseconds - t.unix_microseconds) / microseconds_per_second
 	if secs <= 30 {
 		// right now or in the future
 		// TODO handle time in the future
@@ -256,7 +369,7 @@ pub fn (t Time) relative() string {
 // `15842354871s -> ''`
 pub fn (t Time) relative_short() string {
 	znow := now()
-	secs := znow.unix - t.unix
+	secs := (znow.unix_microseconds - t.unix_microseconds) / microseconds_per_second
 	if secs <= 30 {
 		// right now or in the future
 		// TODO handle time in the future
@@ -295,7 +408,7 @@ pub fn day_of_week(y int, m int, d int) int {
 
 // day_of_week returns the current day as an integer.
 pub fn (t Time) day_of_week() int {
-	return day_of_week(t.year, t.month, t.day)
+	return day_of_week(t.year(), t.month(), t.day())
 }
 
 // weekday_str returns the current day as a string.
@@ -366,20 +479,6 @@ pub fn (t Time) str() string {
 	return t.format_ss()
 }
 
-// convert_ctime converts a C time to V time.
-fn convert_ctime(t C.tm, microsecond int) Time {
-	return Time{
-		year: t.tm_year + 1900
-		month: t.tm_mon + 1
-		day: t.tm_mday
-		hour: t.tm_hour
-		minute: t.tm_min
-		second: t.tm_sec
-		microsecond: time.microsecond
-		unix: u64(make_unix_time(t))
-	}
-}
-
 // A lot of these are taken from the Go library.
 pub type Duration = i64
 
@@ -433,7 +532,5 @@ pub fn (d Duration) hours() f64 {
 
 // offset returns time zone UTC offset in seconds.
 pub fn offset() int {
-	t := now()
-	local := t.local()
-	return int(local.unix - t.unix)
+	return os_timezone_offset_seconds()
 }

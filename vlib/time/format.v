@@ -60,11 +60,11 @@ pub fn (t Time) md() string {
 pub fn (t Time) clean() string {
 	znow := now()
 	// Today
-	if t.month == znow.month && t.year == znow.year && t.day == znow.day {
+	if t.month() == znow.month() && t.year() == znow.year() && t.day() == znow.day() {
 		return t.get_fmt_time_str(.hhmm24)
 	}
 	// This year
-	if t.year == znow.year {
+	if t.year() == znow.year() {
 		return t.get_fmt_str(.space, .hhmm24, .mmmd)
 	}
 	return t.format()
@@ -77,11 +77,11 @@ pub fn (t Time) clean() string {
 pub fn (t Time) clean12() string {
 	znow := now()
 	// Today
-	if t.month == znow.month && t.year == znow.year && t.day == znow.day {
+	if t.month() == znow.month() && t.year() == znow.year() && t.day() == znow.day() {
 		return t.get_fmt_time_str(.hhmm12)
 	}
 	// This year
-	if t.year == znow.year {
+	if t.year() == znow.year() {
 		return t.get_fmt_str(.space, .hhmm12, .mmmd)
 	}
 	return t.format()
@@ -92,21 +92,21 @@ pub fn (t Time) get_fmt_time_str(fmt_time FormatTime) string {
 	if fmt_time == .no_time {
 		return ''
 	}
-	tp := if t.hour > 11 { 'p.m.' } else { 'a.m.' }
-	hour_ := if t.hour > 12 {
-		t.hour - 12
-	} else if t.hour == 0 {
+	tp := if t.hour() > 11 { 'p.m.' } else { 'a.m.' }
+	hour_ := if t.hour() > 12 {
+		t.hour() - 12
+	} else if t.hour() == 0 {
 		12
 	} else {
-		t.hour
+		t.hour()
 	}
 	return match fmt_time {
-		.hhmm12 { '$hour_:${t.minute:02d} $tp' }
-		.hhmm24 { '${t.hour:02d}:${t.minute:02d}' }
-		.hhmmss12 { '$hour_:${t.minute:02d}:${t.second:02d} $tp' }
-		.hhmmss24 { '${t.hour:02d}:${t.minute:02d}:${t.second:02d}' }
-		.hhmmss24_milli { '${t.hour:02d}:${t.minute:02d}:${t.second:02d}.${(t.microsecond / 1000):03d}' }
-		.hhmmss24_micro { '${t.hour:02d}:${t.minute:02d}:${t.second:02d}.${t.microsecond:06d}' }
+		.hhmm12 { '$hour_:${t.minute():02d} $tp' }
+		.hhmm24 { '${t.hour():02d}:${t.minute():02d}' }
+		.hhmmss12 { '$hour_:${t.minute():02d}:${t.second():02d} $tp' }
+		.hhmmss24 { '${t.hour():02d}:${t.minute():02d}:${t.second():02d}' }
+		.hhmmss24_milli { '${t.hour():02d}:${t.minute():02d}:${t.second():02d}.${(t.microsecond() / 1000):03d}' }
+		.hhmmss24_micro { '${t.hour():02d}:${t.minute():02d}:${t.second():02d}.${t.microsecond():06d}' }
 		else { 'unknown enumeration $fmt_time' }
 	}
 }
@@ -118,16 +118,16 @@ pub fn (t Time) get_fmt_date_str(fmt_dlmtr FormatDelimiter, fmt_date FormatDate)
 		return ''
 	}
 	month := '$t.smonth()'
-	year := '${(t.year % 100):02d}'
+	year := '${(t.year() % 100):02d}'
 	mut res := match fmt_date {
-		.ddmmyy { '${t.day:02d}|${t.month:02d}|$year' }
-		.ddmmyyyy { '${t.day:02d}|${t.month:02d}|${t.year:04d}' }
-		.mmddyy { '${t.month:02d}|${t.day:02d}|$year' }
-		.mmddyyyy { '${t.month:02d}|${t.day:02d}|${t.year:04d}' }
-		.mmmd { '$month|$t.day' }
-		.mmmdd { '$month|${t.day:02d}' }
-		.mmmddyyyy { '$month|${t.day:02d}|${t.year:04d}' }
-		.yyyymmdd { '${t.year:04d}|${t.month:02d}|${t.day:02d}' }
+		.ddmmyy { '${t.day():02d}|${t.month():02d}|$year' }
+		.ddmmyyyy { '${t.day():02d}|${t.month():02d}|${t.year():04d}' }
+		.mmddyy { '${t.month():02d}|${t.day():02d}|$year' }
+		.mmddyyyy { '${t.month():02d}|${t.day():02d}|${t.year():04d}' }
+		.mmmd { '$month|$t.day()' }
+		.mmmdd { '$month|${t.day():02d}' }
+		.mmmddyyyy { '$month|${t.day():02d}|${t.year():04d}' }
+		.yyyymmdd { '${t.year():04d}|${t.month():02d}|${t.day():02d}' }
 		else { 'unknown enumeration $fmt_date' }
 	}
 	del := match fmt_dlmtr {
@@ -165,6 +165,6 @@ pub fn (t Time) get_fmt_str(fmt_dlmtr FormatDelimiter, fmt_time FormatTime, fmt_
 pub fn (t Time) utc_string() string {
 	day_str := t.weekday_str()
 	month_str := t.smonth()
-	utc_string := '$day_str, $t.day $month_str $t.year ${t.hour:02d}:${t.minute:02d}:${t.second:02d} UTC'
+	utc_string := '$day_str, $t.day() $month_str $t.year() ${t.hour():02d}:${t.minute():02d}:${t.second():02d} UTC'
 	return utc_string
 }

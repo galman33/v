@@ -1,7 +1,7 @@
 module time
 
 fn assert_greater_time(ms int, t1 Time) {
-	wait(ms * millisecond)
+	sleep(ms * millisecond)
 	t2 := now()
 	assert t2 > t1
 }
@@ -32,7 +32,7 @@ fn test_now_always_results_in_greater_time() {
 }
 
 fn test_time1_should_be_same_as_time2() {
-	t1 := new_time(Time{
+	t1 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -41,7 +41,7 @@ fn test_time1_should_be_same_as_time2() {
 		second: 3
 		microsecond: 100
 	})
-	t2 := new_time(Time{
+	t2 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -54,7 +54,7 @@ fn test_time1_should_be_same_as_time2() {
 }
 
 fn test_time1_should_not_be_same_as_time2() {
-	t1 := new_time(Time{
+	t1 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -64,7 +64,7 @@ fn test_time1_should_not_be_same_as_time2() {
 		microsecond: 100
 	})
 	// Difference is one microsecond
-	t2 := new_time(Time{
+	t2 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -73,7 +73,7 @@ fn test_time1_should_not_be_same_as_time2() {
 		second: 3
 		microsecond: 101
 	})
-	t3 := new_time(Time{
+	t3 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -83,7 +83,7 @@ fn test_time1_should_not_be_same_as_time2() {
 		microsecond: 0
 	})
 	// Difference is one second
-	t4 := new_time(Time{
+	t4 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -97,7 +97,7 @@ fn test_time1_should_not_be_same_as_time2() {
 }
 
 fn test_time1_should_be_greater_than_time2() {
-	t1 := new_time(Time{
+	t1 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -107,7 +107,7 @@ fn test_time1_should_be_greater_than_time2() {
 		microsecond: 102
 	})
 	// Difference is one microsecond
-	t2 := new_time(Time{
+	t2 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -116,7 +116,7 @@ fn test_time1_should_be_greater_than_time2() {
 		second: 3
 		microsecond: 101
 	})
-	t3 := new_time(Time{
+	t3 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -126,7 +126,7 @@ fn test_time1_should_be_greater_than_time2() {
 		microsecond: 0
 	})
 	// Difference is one second
-	t4 := new_time(Time{
+	t4 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -140,7 +140,7 @@ fn test_time1_should_be_greater_than_time2() {
 }
 
 fn test_time2_should_be_less_than_time1() {
-	t1 := new_time(Time{
+	t1 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -150,7 +150,7 @@ fn test_time2_should_be_less_than_time1() {
 		microsecond: 102
 	})
 	// Difference is one microsecond
-	t2 := new_time(Time{
+	t2 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -159,7 +159,7 @@ fn test_time2_should_be_less_than_time1() {
 		second: 3
 		microsecond: 101
 	})
-	t3 := new_time(Time{
+	t3 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -169,7 +169,7 @@ fn test_time2_should_be_less_than_time1() {
 		microsecond: 0
 	})
 	// Difference is one second
-	t4 := new_time(Time{
+	t4 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -183,7 +183,7 @@ fn test_time2_should_be_less_than_time1() {
 }
 
 fn test_time1_should_be_greater_or_equal_to_time2_when_gt() {
-	t1 := new_time(Time{
+	t1 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -193,7 +193,7 @@ fn test_time1_should_be_greater_or_equal_to_time2_when_gt() {
 		microsecond: 102
 	})
 	// Difference is one microsecond
-	t2 := new_time(Time{
+	t2 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -202,7 +202,7 @@ fn test_time1_should_be_greater_or_equal_to_time2_when_gt() {
 		second: 3
 		microsecond: 101
 	})
-	t3 := new_time(Time{
+	t3 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -212,7 +212,7 @@ fn test_time1_should_be_greater_or_equal_to_time2_when_gt() {
 		microsecond: 0
 	})
 	// Difference is one second
-	t4 := new_time(Time{
+	t4 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -226,7 +226,7 @@ fn test_time1_should_be_greater_or_equal_to_time2_when_gt() {
 }
 
 fn test_time1_should_be_greater_or_equal_to_time2_when_eq() {
-	t1 := new_time(Time{
+	t1 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -236,7 +236,7 @@ fn test_time1_should_be_greater_or_equal_to_time2_when_eq() {
 		microsecond: 100
 	})
 	// Difference is one microsecond
-	t2 := new_time(Time{
+	t2 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -245,7 +245,7 @@ fn test_time1_should_be_greater_or_equal_to_time2_when_eq() {
 		second: 3
 		microsecond: 100
 	})
-	t3 := new_time(Time{
+	t3 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -255,7 +255,7 @@ fn test_time1_should_be_greater_or_equal_to_time2_when_eq() {
 		microsecond: 0
 	})
 	// Difference is one second
-	t4 := new_time(Time{
+	t4 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -269,7 +269,7 @@ fn test_time1_should_be_greater_or_equal_to_time2_when_eq() {
 }
 
 fn test_time1_should_be_less_or_equal_to_time2_when_lt() {
-	t1 := new_time(Time{
+	t1 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -279,7 +279,7 @@ fn test_time1_should_be_less_or_equal_to_time2_when_lt() {
 		microsecond: 100
 	})
 	// Difference is one microsecond
-	t2 := new_time(Time{
+	t2 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -288,7 +288,7 @@ fn test_time1_should_be_less_or_equal_to_time2_when_lt() {
 		second: 3
 		microsecond: 101
 	})
-	t3 := new_time(Time{
+	t3 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -298,7 +298,7 @@ fn test_time1_should_be_less_or_equal_to_time2_when_lt() {
 		microsecond: 0
 	})
 	// Difference is one second
-	t4 := new_time(Time{
+	t4 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -312,7 +312,7 @@ fn test_time1_should_be_less_or_equal_to_time2_when_lt() {
 }
 
 fn test_time1_should_be_less_or_equal_to_time2_when_eq() {
-	t1 := new_time(Time{
+	t1 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -322,7 +322,7 @@ fn test_time1_should_be_less_or_equal_to_time2_when_eq() {
 		microsecond: 100
 	})
 	// Difference is one microsecond
-	t2 := new_time(Time{
+	t2 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -331,7 +331,7 @@ fn test_time1_should_be_less_or_equal_to_time2_when_eq() {
 		second: 3
 		microsecond: 100
 	})
-	t3 := new_time(Time{
+	t3 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -341,7 +341,7 @@ fn test_time1_should_be_less_or_equal_to_time2_when_eq() {
 		microsecond: 0
 	})
 	// Difference is one second
-	t4 := new_time(Time{
+	t4 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -355,7 +355,7 @@ fn test_time1_should_be_less_or_equal_to_time2_when_eq() {
 }
 
 fn test_time2_copied_from_time1_should_be_equal() {
-	t1 := new_time(Time{
+	t1 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -364,7 +364,7 @@ fn test_time2_copied_from_time1_should_be_equal() {
 		second: 3
 		microsecond: 100
 	})
-	t2 := new_time(t1)
+	t2 := new_time(t1.date())
 	assert t2 == t1
 }
 
@@ -372,7 +372,7 @@ fn test_subtract() {
 	d_seconds := 3
 	d_microseconds := 13
 	duration := d_seconds * second + d_microseconds * microsecond
-	t1 := new_time(Time{
+	t1 := new_time(Date{
 		year: 2000
 		month: 5
 		day: 10
@@ -381,7 +381,7 @@ fn test_subtract() {
 		second: 3
 		microsecond: 100
 	})
-	t2 := unix2(int(t1.unix) + d_seconds, t1.microsecond + d_microseconds)
+	t2 := Time{t1.unix_micro() + d_seconds * microseconds_per_second + d_microseconds}
 	d1 := t2 - t1
 	d2 := t1 - t2
 	assert d1 > 0

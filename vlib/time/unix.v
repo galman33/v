@@ -5,120 +5,76 @@ module time
 
 // unix returns a time struct from Unix time.
 pub fn unix(abs int) Time {
-	// Split into day and time
-	mut day_offset := abs / seconds_per_day
-	if abs % seconds_per_day < 0 {
-		// Compensate for round towards zero on integers as we want floored instead
-		day_offset--
-	}
-	year, month, day := calculate_date_from_offset(day_offset)
-	hr, min, sec := calculate_time_from_offset(abs % seconds_per_day)
-	return Time{
-		year: year
-		month: month
-		day: day
-		hour: hr
-		minute: min
-		second: sec
-		unix: u64(abs)
-	}
+	return Time{i64(abs) * microseconds_per_second}
 }
 
 // unix2 returns a time struct from Unix time and microsecond value
 pub fn unix2(abs int, microsecond int) Time {
-	// Split into day and time
-	mut day_offset := abs / seconds_per_day
-	if abs % seconds_per_day < 0 {
-		// Compensate for round towards zero on integers as we want floored instead
-		day_offset--
-	}
-	year, month, day := calculate_date_from_offset(day_offset)
-	hr, min, sec := calculate_time_from_offset(abs % seconds_per_day)
-	return Time{
-		year: year
-		month: month
-		day: day
-		hour: hr
-		minute: min
-		second: sec
-		microsecond: microsecond
-		unix: u64(abs)
-	}
+	return Time {i64(abs) * microseconds_per_second + microsecond}
 }
 
-fn calculate_date_from_offset(day_offset_ int) (int, int, int) {
-	mut day_offset := day_offset_
-	// Move offset to year 2001 as it's the start of a new 400-year cycle
-	// Code below this rely on the fact that the day_offset is lined up with the 400-year cycle
-	// 1970-2000 (inclusive) has 31 years (8 of which are leap years)
-	mut year := 2001
-	day_offset -= 31 * 365 + 8
-	// Account for 400 year cycle
-	year += (day_offset / days_per_400_years) * 400
-	day_offset %= days_per_400_years
-	// Account for 100 year cycle
-	if day_offset == days_per_100_years * 4 {
-		year += 300
-		day_offset -= days_per_100_years * 3
-	} else {
-		year += (day_offset / days_per_100_years) * 100
-		day_offset %= days_per_100_years
-	}
-	// Account for 4 year cycle
-	if day_offset == days_per_4_years * 25 {
-		year += 96
-		day_offset -= days_per_4_years * 24
-	} else {
-		year += (day_offset / days_per_4_years) * 4
-		day_offset %= days_per_4_years
-	}
-	// Account for every year
-	if day_offset == 365 * 4 {
-		year += 3
-		day_offset -= 365 * 3
-	} else {
-		year += (day_offset / 365)
-		day_offset %= 365
-	}
-	if day_offset < 0 {
-		year--
-		if is_leap_year(year) {
-			day_offset += 366
-		} else {
-			day_offset += 365
-		}
-	}
+fn abs_seconds_to_date(abs_seconds u64) (int, int, int) {
+	// Split into time and day.
+	mut d := abs_seconds / seconds_per_day
+
+	// Account for 400 year cycles.
+	mut n := d / days_per_400_years
+	mut y := 400 * n
+	d -= days_per_400_years * n
+
+	// Cut off 100-year cycles.
+	// The last cycle has one extra leap year, so on the last day
+	// of that year, day / daysPer100Years will be 4 instead of 3.
+	// Cut it back down to 3 by subtracting n>>2.
+	n = d / days_per_100_years
+	n -= n >> 2
+	y += 100 * n
+	d -= days_per_100_years * n
+
+	// Cut off 4-year cycles.
+	// The last cycle has a missing leap year, which does not
+	// affect the computation.
+	n = d / days_per_4_years
+	y += 4 * n
+	d -= days_per_4_years * n
+
+	// Cut off years within a 4-year cycle.
+	// The last year is a leap year, so on the last day of that year,
+	// day / 365 will be 4 instead of 3. Cut it back down to 3
+	// by subtracting n>>2.
+	n = d / 365
+	n -= n >> 2
+	y += n
+	d -= 365 * n
+
+	year := int(i64(y) + absolute_zero_year)
+	yday := int(d)
+
+	mut day := yday
 	if is_leap_year(year) {
-		if day_offset > 31 + 29 - 1 {
+		// Leap year
+		if day > 31+29-1 {
 			// After leap day; pretend it wasn't there.
-			day_offset--
-		} else if day_offset == 31 + 29 - 1 {
+			day--
+		} else if day == 31+29-1 {
 			// Leap day.
 			return year, 2, 29
 		}
 	}
-	mut estimated_month := day_offset / 31
-	for day_offset >= days_before[estimated_month + 1] {
-		estimated_month++
-	}
-	for day_offset < days_before[estimated_month] {
-		if estimated_month == 0 {
-			break
-		}
-		estimated_month--
-	}
-	day_offset -= days_before[estimated_month]
-	return year, estimated_month + 1, day_offset + 1
-}
 
-fn calculate_time_from_offset(second_offset_ int) (int, int, int) {
-	mut second_offset := second_offset_
-	if second_offset < 0 {
-		second_offset += seconds_per_day
+	// Estimate month on assumption that every month has 31 days.
+	// The estimate may be too low by at most one month, so adjust.
+	mut month := day / 31
+	end := int(days_before[month+1])
+	mut begin := 0
+	if day >= end {
+		month++
+		begin = end
+	} else {
+		begin = int(days_before[month])
 	}
-	hour_ := second_offset / seconds_per_hour
-	second_offset %= seconds_per_hour
-	min := second_offset / seconds_per_minute
-	second_offset %= seconds_per_minute
-	return hour_, min, second_offset
+
+	month++ // because January is 1
+	day = day - begin + 1
+	return year, month, day
 }

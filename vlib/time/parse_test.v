@@ -6,9 +6,9 @@ fn test_parse() {
 		assert false
 		return
 	}
-	assert t.year == 2018 && t.month == 1 && t.day == 27 && t.hour == 12 && t.minute == 48
-		&& t.second == 34
-	assert t.unix == 1517057314
+	assert t.year() == 2018 && t.month() == 1 && t.day() == 27 && t.hour() == 12 && t.minute() == 48
+		&& t.second() == 34
+	assert t.unix() == 1517057314
 }
 
 fn test_parse_invalid() {
@@ -26,17 +26,17 @@ fn test_parse_rfc2822() {
 		assert false
 		return
 	}
-	assert t1.year == 2019 && t1.month == 12 && t1.day == 12 && t1.hour == 6 && t1.minute == 7
-		&& t1.second == 45
-	assert t1.unix == 1576130865
+	assert t1.year() == 2019 && t1.month() == 12 && t1.day() == 12 && t1.hour() == 6 && t1.minute() == 7
+		&& t1.second() == 45
+	assert t1.unix() == 1576130865
 	s2 := 'Thu 12 Dec 2019 06:07:45 +0800'
 	t2 := time.parse_rfc2822(s2) or {
 		assert false
 		return
 	}
-	assert t2.year == 2019 && t2.month == 12 && t2.day == 12 && t2.hour == 6 && t2.minute == 7
-		&& t2.second == 45
-	assert t2.unix == 1576130865
+	assert t2.year() == 2019 && t2.month() == 12 && t2.day() == 12 && t2.hour() == 6 && t2.minute() == 7
+		&& t2.second() == 45
+	assert t2.unix() == 1576130865
 }
 
 fn test_parse_rfc2822_invalid() {
@@ -71,19 +71,19 @@ fn test_parse_iso8601() {
 			continue
 		}
 		year := times[i][0]
-		assert t.year == year
+		assert t.year() == year
 		month := times[i][1]
-		assert t.month == month
+		assert t.month() == month
 		day := times[i][2]
-		assert t.day == day
+		assert t.day() == day
 		hour := times[i][3]
-		assert t.hour == hour
+		assert t.hour() == hour
 		minute := times[i][4]
-		assert t.minute == minute
+		assert t.minute() == minute
 		second := times[i][5]
-		assert t.second == second
+		assert t.second() == second
 		microsecond := times[i][6]
-		assert t.microsecond == microsecond
+		assert t.microsecond() == microsecond
 	}
 }
 
@@ -93,13 +93,13 @@ fn test_parse_iso8601_local() {
 		assert false
 		return
 	}
-	assert t.year == 2020
-	assert t.month == 6
-	assert t.day == 5
-	assert t.hour == 15
-	assert t.minute == 38
-	assert t.second == 6
-	assert t.microsecond == 15959
+	assert t.year() == 2020
+	assert t.month() == 6
+	assert t.day() == 5
+	assert t.hour() == 15
+	assert t.minute() == 38
+	assert t.second() == 6
+	assert t.microsecond() == 15959
 }
 
 fn test_parse_iso8601_invalid() {
@@ -128,11 +128,11 @@ fn test_parse_iso8601_date_only() {
 		assert false
 		return
 	}
-	assert t.year == 2020
-	assert t.month == 6
-	assert t.day == 5
-	assert t.hour == 0
-	assert t.minute == 0
-	assert t.second == 0
-	assert t.microsecond == 0
+	assert t.year() == 2020
+	assert t.month() == 6
+	assert t.day() == 5
+	assert t.hour() == 0
+	assert t.minute() == 0
+	assert t.second() == 0
+	assert t.microsecond() == 0
 }

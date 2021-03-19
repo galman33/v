@@ -16,7 +16,7 @@ pub fn parse(s string) ?Time {
 	hour_ := hms[0][1..]
 	minute_ := hms[1]
 	second_ := hms[2]
-	res := new_time(Time{
+	res := new_time(Date{
 		year: ymd[0].int()
 		month: ymd[1].int()
 		day: ymd[2].int()
@@ -117,7 +117,7 @@ pub fn parse_iso8601(s string) ?Time {
 	if parts.len == 2 {
 		hour_, minute_, second_, microsecond_, unix_offset, is_local_time = parse_iso8601_time(parts[1]) ?
 	}
-	mut t := new_time(Time{
+	mut t := new_time(Date{
 		year: year
 		month: month
 		day: day
@@ -129,12 +129,12 @@ pub fn parse_iso8601(s string) ?Time {
 	if is_local_time {
 		return t // Time already local time
 	}
-	mut unix_time := t.unix
+	mut unix_time := t.unix_microseconds
 	if unix_offset < 0 {
-		unix_time -= u64(-unix_offset)
+		unix_time -= i64(-unix_offset * microseconds_per_second)
 	} else if unix_offset > 0 {
-		unix_time += u64(unix_offset)
+		unix_time += i64(unix_offset * microseconds_per_second)
 	}
-	t = unix2(int(unix_time), t.microsecond)
+	t = Time{unix_time}
 	return t
 }
