@@ -287,7 +287,13 @@ pub fn (f &File) read(mut buf []byte) ?int {
 }
 
 // read_at reads `buf.len` bytes starting at file byte offset `pos`, in `buf`.
+[deprecated: 'use File.read_from() instead']
 pub fn (f &File) read_at(pos int, mut buf []byte) ?int {
+	return f.read_from(pos, mut buf)
+}
+
+// read_from implements the RandomReader interface.
+pub fn (f &File) read_from(pos int, mut buf []byte) ?int {
 	if buf.len == 0 {
 		return 0
 	}
@@ -311,11 +317,9 @@ pub fn (mut f File) flush() {
 
 // write_str writes the bytes of a string into a file,
 // *including* the terminating 0 byte.
+[deprecated: 'use File.write_string() instead']
 pub fn (mut f File) write_str(s string) ? {
-	if !f.is_opened {
-		return error('file is closed')
-	}
-	f.write(s.bytes()) ?
+	f.write_string(s) or { return err }
 }
 
 // read_struct reads a single struct of type `T`
@@ -337,18 +341,153 @@ pub fn (mut f File) read_struct<T>(mut t T) ? {
 	}
 }
 
+// read_struct_at reads a single struct of type `T` at position specified in file
+pub fn (mut f File) read_struct_at<T>(mut t T, pos int) ? {
+	if !f.is_opened {
+		return none
+	}
+	tsize := int(sizeof(*t))
+	if tsize == 0 {
+		return none
+	}
+	C.errno = 0
+	C.fseek(f.cfile, pos, C.SEEK_SET)
+	nbytes := int(C.fread(t, 1, tsize, f.cfile))
+	C.fseek(f.cfile, 0, C.SEEK_END)
+	if C.errno != 0 {
+		return error(posix_get_error_msg(C.errno))
+	}
+	if nbytes != tsize {
+		return error_with_code('incomplete struct read', nbytes)
+	}
+}
+
+// read_raw reads and returns a single instance of type `T`
+pub fn (mut f File) read_raw<T>() ?T {
+	if !f.is_opened {
+		return none
+	}
+	tsize := int(sizeof(T))
+	if tsize == 0 {
+		return none
+	}
+	C.errno = 0
+	mut t := T{}
+	nbytes := int(C.fread(&t, 1, tsize, f.cfile))
+	if C.errno != 0 {
+		return error(posix_get_error_msg(C.errno))
+	}
+	if nbytes != tsize {
+		return error_with_code('incomplete struct read', nbytes)
+	}
+	return t
+}
+
+// read_raw_at reads and returns a single instance of type `T` starting at file byte offset `pos`
+pub fn (mut f File) read_raw_at<T>(pos int) ?T {
+	if !f.is_opened {
+		return none
+	}
+	tsize := int(sizeof(T))
+	if tsize == 0 {
+		return none
+	}
+	C.errno = 0
+	if C.fseek(f.cfile, pos, C.SEEK_SET) != 0 {
+		return error(posix_get_error_msg(C.errno))
+	}
+	mut t := T{}
+	nbytes := int(C.fread(&t, 1, tsize, f.cfile))
+	if C.errno != 0 {
+		return error(posix_get_error_msg(C.errno))
+	}
+	if C.fseek(f.cfile, 0, C.SEEK_END) != 0 {
+		return error(posix_get_error_msg(C.errno))
+	}
+	if nbytes != tsize {
+		return error_with_code('incomplete struct read', nbytes)
+	}
+	return t
+}
+
 // write_struct writes a single struct of type `T`
 pub fn (mut f File) write_struct<T>(t &T) ? {
 	if !f.is_opened {
 		return error('file is not opened')
 	}
-	tsize := int(sizeof(*t))
+	tsize := int(sizeof(T))
 	if tsize == 0 {
 		return error('struct size is 0')
 	}
 	C.errno = 0
 	nbytes := int(C.fwrite(t, 1, tsize, f.cfile))
 	if C.errno != 0 {
+		return error(posix_get_error_msg(C.errno))
+	}
+	if nbytes != tsize {
+		return error_with_code('incomplete struct write', nbytes)
+	}
+}
+
+// write_struct_at writes a single struct of type `T` at position specified in file
+pub fn (mut f File) write_struct_at<T>(t &T, pos int) ? {
+	if !f.is_opened {
+		return error('file is not opened')
+	}
+	tsize := int(sizeof(T))
+	if tsize == 0 {
+		return error('struct size is 0')
+	}
+	C.errno = 0
+	C.fseek(f.cfile, pos, C.SEEK_SET)
+	nbytes := int(C.fwrite(t, 1, tsize, f.cfile))
+	C.fseek(f.cfile, 0, C.SEEK_END)
+	if C.errno != 0 {
+		return error(posix_get_error_msg(C.errno))
+	}
+	if nbytes != tsize {
+		return error_with_code('incomplete struct write', nbytes)
+	}
+}
+
+// TODO `write_raw[_at]` implementations are copy-pasted from `write_struct[_at]`
+
+// write_raw writes a single instance of type `T`
+pub fn (mut f File) write_raw<T>(t &T) ? {
+	if !f.is_opened {
+		return error('file is not opened')
+	}
+	tsize := int(sizeof(T))
+	if tsize == 0 {
+		return error('struct size is 0')
+	}
+	C.errno = 0
+	nbytes := int(C.fwrite(t, 1, tsize, f.cfile))
+	if C.errno != 0 {
+		return error(posix_get_error_msg(C.errno))
+	}
+	if nbytes != tsize {
+		return error_with_code('incomplete struct write', nbytes)
+	}
+}
+
+// write_raw_at writes a single instance of type `T` starting at file byte offset `pos`
+pub fn (mut f File) write_raw_at<T>(t &T, pos int) ? {
+	if !f.is_opened {
+		return error('file is not opened')
+	}
+	tsize := int(sizeof(T))
+	if tsize == 0 {
+		return error('struct size is 0')
+	}
+	if C.fseek(f.cfile, pos, C.SEEK_SET) != 0 {
+		return error(posix_get_error_msg(C.errno))
+	}
+	nbytes := int(C.fwrite(t, 1, tsize, f.cfile))
+	if C.errno != 0 {
+		return error(posix_get_error_msg(C.errno))
+	}
+	if C.fseek(f.cfile, 0, C.SEEK_END) != 0 {
 		return error(posix_get_error_msg(C.errno))
 	}
 	if nbytes != tsize {

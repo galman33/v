@@ -43,9 +43,19 @@ pub enum CompilerType {
 	cplusplus
 }
 
+pub enum Arch {
+	_auto
+	amd64 // aka x86_64
+	aarch64 // 64-bit arm
+	aarch32 // 32-bit arm
+	rv64 // 64-bit risc-v
+	rv32 // 32-bit risc-v
+	i386
+}
+
 const (
 	list_of_flags_with_param = ['o', 'd', 'define', 'b', 'backend', 'cc', 'os', 'target-os', 'cf',
-		'cflags', 'path']
+		'cflags', 'path', 'arch']
 )
 
 [heap]
@@ -54,6 +64,7 @@ pub mut:
 	os          OS // the OS to compile for
 	backend     Backend
 	build_mode  BuildMode
+	arch        Arch
 	output_mode OutputMode = .stdout
 	// verbosity           VerboseLevel
 	is_verbose bool
@@ -115,8 +126,6 @@ pub mut:
 	vroot          string
 	out_name_c     string // full os.real_path to the generated .tmp.c file; set by builder.
 	out_name       string
-	display_name   string
-	bundle_id      string
 	path           string // Path to file/folder to compile
 	// -d vfmt and -d another=0 for `$if vfmt { will execute }` and `$if another ? { will NOT get here }`
 	compile_defines     []string    // just ['vfmt']
@@ -144,6 +153,8 @@ pub mut:
 	build_options       []string // list of options, that should be passed down to `build-module`, if needed for -usecache
 	cache_manager       vcache.CacheManager
 	is_help             bool // -h, -help or --help was passed
+	// checker settings:
+	checker_match_exhaustive_cutoff_limit int = 10
 }
 
 pub fn parse_args(known_external_commands []string, args []string) (&Preferences, string) {
@@ -156,11 +167,21 @@ pub fn parse_args(known_external_commands []string, args []string) (&Preferences
 	// for i, arg in args {
 	for i := 0; i < args.len; i++ {
 		arg := args[i]
-		current_args := args[i..]
+		current_args := args[i..].clone()
 		match arg {
 			'-apk' {
 				res.is_apk = true
 				res.build_options << arg
+			}
+			'-arch' {
+				target_arch := cmdline.option(current_args, '-arch', '')
+				i++
+				target_arch_kind := arch_from_string(target_arch) or {
+					eprintln('unknown architercture target `$target_arch`')
+					exit(1)
+				}
+				res.arch = target_arch_kind
+				res.build_options << '$arg $target_arch'
 			}
 			'-show-timings' {
 				res.show_timings = true
@@ -350,7 +371,7 @@ pub fn parse_args(known_external_commands []string, args []string) (&Preferences
 				res.build_options << '$arg $target_os'
 			}
 			'-printfn' {
-				res.printfn_list << cmdline.option(current_args, '-printfn', '')
+				res.printfn_list << cmdline.option(current_args, '-printfn', '').split(',')
 				i++
 			}
 			'-cflags' {
@@ -368,6 +389,11 @@ pub fn parse_args(known_external_commands []string, args []string) (&Preferences
 			'-cc' {
 				res.ccompiler = cmdline.option(current_args, '-cc', 'cc')
 				res.build_options << '$arg "$res.ccompiler"'
+				i++
+			}
+			'-checker-match-exhaustive-cutoff-limit' {
+				res.checker_match_exhaustive_cutoff_limit = cmdline.option(current_args,
+					arg, '10').int()
 				i++
 			}
 			'-o' {
@@ -403,14 +429,6 @@ pub fn parse_args(known_external_commands []string, args []string) (&Preferences
 				res.custom_prelude = prelude
 				i++
 			}
-			'-name' {
-				res.display_name = cmdline.option(current_args, '-name', '')
-				i++
-			}
-			'-bundle' {
-				res.bundle_id = cmdline.option(current_args, '-bundle', '')
-				i++
-			}
 			else {
 				if command == 'build' && is_source_file(arg) {
 					eprintln('Use `v $arg` instead.')
@@ -441,15 +459,18 @@ pub fn parse_args(known_external_commands []string, args []string) (&Preferences
 					command_pos = i
 					continue
 				}
-				if command !in ['', 'build-module'] {
+				if command != '' && command != 'build-module' {
 					// arguments for e.g. fmt should be checked elsewhere
 					continue
 				}
-				eprint('Unknown argument `$arg`')
-				eprintln(if command.len == 0 { '' } else { ' for command `$command`' })
+				extension := if command.len == 0 { '' } else { ' for command `$command`' }
+				eprintln('Unknown argument `$arg`$extension')
 				exit(1)
 			}
 		}
+	}
+	if res.is_debug {
+		parse_define(mut res, 'debug')
 	}
 	// res.use_cache = true
 	if command != 'doc' && res.out_name.ends_with('.v') {
@@ -490,7 +511,7 @@ pub fn parse_args(known_external_commands []string, args []string) (&Preferences
 			//
 			if output_option.len != 0 {
 				res.vrun_elog('remove tmp exe file: $tmp_exe_file_path')
-				os.rm(tmp_exe_file_path) or { }
+				os.rm(tmp_exe_file_path) or {}
 			}
 			res.vrun_elog('remove tmp v file: $tmp_v_file_path')
 			os.rm(tmp_v_file_path) or { panic(err) }
@@ -524,6 +545,41 @@ pub fn (pref &Preferences) vrun_elog(s string) {
 	}
 }
 
+pub fn arch_from_string(arch_str string) ?Arch {
+	match arch_str {
+		'amd64', 'x86_64', 'x64', 'x86' { // amd64 recommended
+
+			return Arch.amd64
+		}
+		'aarch64', 'arm64' { // aarch64 recommended
+
+			return Arch.aarch64
+		}
+		'arm32', 'aarch32', 'arm' { // aarch32 recommended
+
+			return Arch.aarch32
+		}
+		'rv64', 'riscv64', 'risc-v64', 'riscv', 'risc-v' { // rv64 recommended
+
+			return Arch.rv64
+		}
+		'rv32', 'riscv32' { // rv32 recommended
+
+			return Arch.rv32
+		}
+		'x86_32', 'x32', 'i386', 'IA-32', 'ia-32', 'ia32' { // i386 recommended
+
+			return Arch.i386
+		}
+		'' {
+			return ._auto
+		}
+		else {
+			return error('invalid arch: $arch_str')
+		}
+	}
+}
+
 fn must_exist(path string) {
 	if !os.exists(path) {
 		eprintln('v expects that `$path` exists, but it does not')
@@ -551,7 +607,10 @@ pub fn cc_from_string(cc_str string) CompilerType {
 		return .gcc
 	}
 	// TODO
-	cc := cc_str.replace('\\', '/').split('/').last().all_before('.')
+	normalized_cc := cc_str.replace('\\', '/')
+	normalized_cc_array := normalized_cc.split('/')
+	last_elem := normalized_cc_array.last()
+	cc := last_elem.all_before('.')
 	if '++' in cc {
 		return .cplusplus
 	}
@@ -571,6 +630,22 @@ pub fn cc_from_string(cc_str string) CompilerType {
 		return .msvc
 	}
 	return .gcc
+}
+
+pub fn get_host_arch() Arch {
+	$if amd64 {
+		return .amd64
+	}
+	// $if i386 {
+	// 	return .amd64
+	// }
+	$if aarch64 {
+		return .aarch64
+	}
+	// $if aarch32 {
+	// 	return .aarch32
+	// }
+	panic('unknown host OS')
 }
 
 fn parse_define(mut prefs Preferences, define string) {

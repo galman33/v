@@ -9,11 +9,12 @@ import v.util
 
 pub struct Table {
 pub mut:
-	types         []TypeSymbol
+	type_symbols  []TypeSymbol
 	type_idxs     map[string]int
 	fns           map[string]Fn
-	imports       []string // List of all imports
-	modules       []string // Topologically sorted list of all modules registered by the application
+	dumps         map[int]string // needed for efficiently generating all _v_dump_expr_TNAME() functions
+	imports       []string       // List of all imports
+	modules       []string       // Topologically sorted list of all modules registered by the application
 	cflags        []cflag.CFlag
 	redefined_fns []string
 	fn_gen_types  map[string][][]Type // for generic functions
@@ -31,10 +32,13 @@ pub:
 	language       Language
 	generic_names  []string
 	is_pub         bool
-	is_deprecated  bool
-	is_unsafe      bool
+	is_deprecated  bool // `[deprecated] fn abc(){}`
+	is_unsafe      bool // `[unsafe] fn abc(){}`
 	is_placeholder bool
-	no_body        bool
+	is_main        bool // `fn main(){}`
+	is_test        bool // `fn test_abc(){}`
+	is_conditional bool // `[if abc]fn(){}`
+	no_body        bool // a pure declaration like `fn abc(x int)`; used in .vh files, C./JS. fns.
 	mod            string
 	ctdefine       string // compile time define. "myflag", when [if myflag] tag
 	attrs          []Attr
@@ -53,12 +57,13 @@ fn (f &Fn) method_equals(o &Fn) bool {
 
 pub struct Param {
 pub:
-	pos       token.Position
-	name      string
-	is_mut    bool
-	typ       Type
-	type_pos  token.Position
-	is_hidden bool // interface first arg
+	pos         token.Position
+	name        string
+	is_mut      bool
+	is_auto_rec bool
+	typ         Type
+	type_pos    token.Position
+	is_hidden   bool // interface first arg
 }
 
 fn (p &Param) equals(o &Param) bool {
@@ -87,7 +92,7 @@ mut:
 
 pub fn new_table() &Table {
 	mut t := &Table{
-		types: []TypeSymbol{cap: 64000}
+		type_symbols: []TypeSymbol{cap: 64000}
 	}
 	t.register_builtin_type_symbols()
 	t.is_fmt = true
@@ -230,7 +235,7 @@ pub fn (t &Table) type_find_method(s &TypeSymbol, name string) ?Fn {
 		if ts.parent_idx == 0 {
 			break
 		}
-		ts = unsafe { &t.types[ts.parent_idx] }
+		ts = unsafe { &t.type_symbols[ts.parent_idx] }
 	}
 	return none
 }
@@ -273,25 +278,37 @@ pub fn (t &Table) find_field(s &TypeSymbol, name string) ?Field {
 	// println('find_field($s.name, $name) types.len=$t.types.len s.parent_idx=$s.parent_idx')
 	mut ts := s
 	for {
-		if mut ts.info is Struct {
-			if field := ts.info.find_field(name) {
+		match mut ts.info {
+			Struct {
+				if field := ts.info.find_field(name) {
+					return field
+				}
+			}
+			Aggregate {
+				if field := ts.info.find_field(name) {
+					return field
+				}
+				field := t.register_aggregate_field(mut ts, name) or { return err }
 				return field
 			}
-		} else if mut ts.info is Aggregate {
-			if field := ts.info.find_field(name) {
-				return field
+			Interface {
+				if field := ts.info.find_field(name) {
+					return field
+				}
 			}
-			field := t.register_aggregate_field(mut ts, name) or { return err }
-			return field
-		} else if mut ts.info is Interface {
-			if field := ts.info.find_field(name) {
-				return field
+			SumType {
+				t.resolve_common_sumtype_fields(s)
+				if field := ts.info.find_field(name) {
+					return field
+				}
+				return error('field `$name` does not exist or have the same type in all sumtype variants')
 			}
+			else {}
 		}
 		if ts.parent_idx == 0 {
 			break
 		}
-		ts = unsafe { &t.types[ts.parent_idx] }
+		ts = unsafe { &t.type_symbols[ts.parent_idx] }
 	}
 	return none
 }
@@ -322,6 +339,46 @@ pub fn (t &Table) find_field_with_embeds(sym &TypeSymbol, field_name string) ?Fi
 	}
 }
 
+pub fn (t &Table) resolve_common_sumtype_fields(sym_ &TypeSymbol) {
+	mut sym := sym_
+	mut info := sym.info as SumType
+	if info.found_fields {
+		return
+	}
+	mut field_map := map[string]Field{}
+	mut field_usages := map[string]int{}
+	for variant in info.variants {
+		mut v_sym := t.get_type_symbol(variant)
+		fields := match mut v_sym.info {
+			Struct {
+				v_sym.info.fields
+			}
+			SumType {
+				t.resolve_common_sumtype_fields(v_sym)
+				v_sym.info.fields
+			}
+			else {
+				[]Field{}
+			}
+		}
+		for field in fields {
+			if field.name !in field_map {
+				field_map[field.name] = field
+				field_usages[field.name]++
+			} else if field.equals(field_map[field.name]) {
+				field_usages[field.name]++
+			}
+		}
+	}
+	for field, nr_definitions in field_usages {
+		if nr_definitions == info.variants.len {
+			info.fields << field_map[field]
+		}
+	}
+	info.found_fields = true
+	sym.info = info
+}
+
 [inline]
 pub fn (t &Table) find_type_idx(name string) int {
 	return t.type_idxs[name]
@@ -331,7 +388,7 @@ pub fn (t &Table) find_type_idx(name string) int {
 pub fn (t &Table) find_type(name string) ?TypeSymbol {
 	idx := t.type_idxs[name]
 	if idx > 0 {
-		return t.types[idx]
+		return t.type_symbols[idx]
 	}
 	return none
 }
@@ -341,7 +398,7 @@ pub fn (t &Table) get_type_symbol(typ Type) &TypeSymbol {
 	// println('get_type_symbol $typ')
 	idx := typ.idx()
 	if idx > 0 {
-		return unsafe { &t.types[idx] }
+		return unsafe { &t.type_symbols[idx] }
 	}
 	// this should never happen
 	panic('get_type_symbol: invalid type (typ=$typ idx=$idx). Compiler bug. This should never happen. Please create a GitHub issue.
@@ -353,12 +410,12 @@ pub fn (t &Table) get_type_symbol(typ Type) &TypeSymbol {
 pub fn (t &Table) get_final_type_symbol(typ Type) &TypeSymbol {
 	idx := typ.idx()
 	if idx > 0 {
-		current_type := t.types[idx]
+		current_type := t.type_symbols[idx]
 		if current_type.kind == .alias {
 			alias_info := current_type.info as Alias
 			return t.get_final_type_symbol(alias_info.parent_type)
 		}
-		return unsafe { &t.types[idx] }
+		return unsafe { &t.type_symbols[idx] }
 	}
 	// this should never happen
 	panic('get_final_type_symbol: invalid type (typ=$typ idx=$idx). Compiler bug. This should never happen. Please create a GitHub issue.')
@@ -387,12 +444,12 @@ pub fn (mut t Table) register_type_symbol(typ TypeSymbol) int {
 	// println('register_type_symbol( $typ.name )')
 	existing_idx := t.type_idxs[typ.name]
 	if existing_idx > 0 {
-		ex_type := t.types[existing_idx]
+		ex_type := t.type_symbols[existing_idx]
 		match ex_type.kind {
 			.placeholder {
 				// override placeholder
 				// println('overriding type placeholder `$typ.name`')
-				t.types[existing_idx] = TypeSymbol{
+				t.type_symbols[existing_idx] = TypeSymbol{
 					...typ
 					methods: ex_type.methods
 				}
@@ -405,13 +462,13 @@ pub fn (mut t Table) register_type_symbol(typ TypeSymbol) int {
 				if (existing_idx >= string_type_idx && existing_idx <= map_type_idx)
 					|| existing_idx == error_type_idx {
 					if existing_idx == string_type_idx {
-						// existing_type := t.types[existing_idx]
-						t.types[existing_idx] = TypeSymbol{
+						// existing_type := t.type_symbols[existing_idx]
+						t.type_symbols[existing_idx] = TypeSymbol{
 							...typ
 							kind: ex_type.kind
 						}
 					} else {
-						t.types[existing_idx] = typ
+						t.type_symbols[existing_idx] = typ
 					}
 					return existing_idx
 				}
@@ -419,8 +476,8 @@ pub fn (mut t Table) register_type_symbol(typ TypeSymbol) int {
 			}
 		}
 	}
-	typ_idx := t.types.len
-	t.types << typ
+	typ_idx := t.type_symbols.len
+	t.type_symbols << typ
 	t.type_idxs[typ.name] = typ_idx
 	return typ_idx
 }
@@ -715,7 +772,7 @@ pub fn (mut t Table) find_or_register_fn_type(mod string, f Fn, is_anon bool, ha
 	anon := f.name.len == 0 || is_anon
 	// existing
 	existing_idx := t.type_idxs[name]
-	if existing_idx > 0 && t.types[existing_idx].kind != .placeholder {
+	if existing_idx > 0 && t.type_symbols[existing_idx].kind != .placeholder {
 		return existing_idx
 	}
 	return t.register_type_symbol(
@@ -797,13 +854,13 @@ pub fn (t &Table) mktyp(typ Type) Type {
 	}
 }
 
-pub fn (mut mytable Table) register_fn_gen_type(fn_name string, types []Type) {
-	mut a := mytable.fn_gen_types[fn_name]
+pub fn (mut t Table) register_fn_gen_type(fn_name string, types []Type) {
+	mut a := t.fn_gen_types[fn_name]
 	if types in a {
 		return
 	}
 	a << types
-	mytable.fn_gen_types[fn_name] = a
+	t.fn_gen_types[fn_name] = a
 }
 
 // TODO: there is a bug when casting sumtype the other way if its pointer
@@ -845,4 +902,39 @@ pub fn (mytable &Table) has_deep_child_no_ref(ts &TypeSymbol, name string) bool 
 		}
 	}
 	return false
+}
+
+// bitsize_to_type returns a type corresponding to the bit_size
+// Examples:
+//
+// `8 > i8`
+//
+// `32 > int`
+//
+// `123 > panic()`
+//
+// `128 > [16]byte`
+//
+// `608 > [76]byte`
+pub fn (mut t Table) bitsize_to_type(bit_size int) Type {
+	match bit_size {
+		8 {
+			return i8_type
+		}
+		16 {
+			return i16_type
+		}
+		32 {
+			return int_type
+		}
+		64 {
+			return i64_type
+		}
+		else {
+			if bit_size % 8 != 0 { // there is no way to do `i2131(32)` so this should never be reached
+				panic('compiler bug: bitsizes must be multiples of 8')
+			}
+			return new_type(t.find_or_register_array_fixed(byte_type, bit_size / 8))
+		}
+	}
 }

@@ -9,6 +9,7 @@ const (
 	vet_folders                     = [
 		'vlib/sqlite',
 		'vlib/v',
+		'vlib/x/ttf/',
 		'cmd/v',
 		'cmd/tools',
 		'examples/2048',
@@ -27,6 +28,8 @@ const (
 		'vlib/builtin/array_test.v',
 		'vlib/builtin/string.v',
 		'vlib/builtin/map.v',
+		'vlib/builtin/int.v',
+		'vlib/builtin/option.v',
 		'vlib/math/bits/bits.v',
 		'vlib/orm/',
 		'vlib/term/colors.v',
@@ -42,18 +45,17 @@ const (
 		'vlib/v/eval/',
 		'vlib/v/fmt/',
 		'vlib/v/gen/c/',
-		/* 'vlib/v/gen/js/', */
-		'vlib/v/gen/tests/',
+		//'vlib/v/gen/js/',
 		'vlib/v/gen/x64/',
 		'vlib/v/live/',
 		'vlib/v/markused/',
 		'vlib/v/parser/',
-		/* 'vlib/v/pkgconfig/', */
+		'vlib/v/pkgconfig/',
 		'vlib/v/pref/',
 		'vlib/v/preludes',
 		'vlib/v/scanner/',
 		'vlib/v/table/',
-		/* 'vlib/v/tests/', */
+		//'vlib/v/tests/',
 		'vlib/v/token/',
 		'vlib/v/util/',
 		'vlib/v/vcache/',
@@ -72,9 +74,11 @@ const (
 	]
 )
 
-const vexe = os.getenv('VEXE')
-
-const vroot = os.dir(vexe)
+const (
+	vexe   = os.getenv('VEXE')
+	vroot  = os.dir(vexe)
+	is_fix = '-fix' in os.args
+)
 
 fn main() {
 	args_string := os.args[1..].join(' ')
@@ -99,8 +103,8 @@ fn tsession(vargs string, tool_source string, tool_cmd string, tool_args string,
 
 fn v_test_vetting(vargs string) {
 	vet_session := tsession(vargs, 'vvet', 'v vet', 'vet', vet_folders, vet_known_failing_exceptions)
-	verify_session := tsession(vargs, 'vfmt.v', 'v fmt -verify', 'fmt -verify', vfmt_verify_list,
-		verify_known_failing_exceptions)
+	fmt_cmd, fmt_args := if is_fix { 'v fmt -w', 'fmt -w' } else { 'v fmt -verify', 'fmt -verify' }
+	verify_session := tsession(vargs, 'vfmt.v', fmt_cmd, fmt_args, vfmt_verify_list, verify_known_failing_exceptions)
 	//
 	if vet_session.benchmark.nfail > 0 || verify_session.benchmark.nfail > 0 {
 		eprintln('\n')

@@ -22,8 +22,7 @@ fn panic_debug(line_no int, file string, mod string, fn_name string, s string) {
 	eprintln('   module: $mod')
 	eprintln(' function: ${fn_name}()')
 	eprintln('  message: $s')
-	eprintln('     file: $file')
-	eprintln('     line: ' + line_no.str())
+	eprintln('     file: $file:$line_no')
 	eprintln('=========================================')
 	$if exit_after_panic_message ? {
 		C.exit(1)
@@ -80,11 +79,19 @@ pub fn eprintln(s string) {
 	C.fflush(C.stdout)
 	C.fflush(C.stderr)
 	// eprintln is used in panics, so it should not fail at all
-	if s.str == 0 {
-		C.write(2, c'eprintln(NIL)\n', 14)
-	} else {
-		C.write(2, s.str, s.len)
-		C.write(2, c'\n', 1)
+	$if android {
+		if s.str == 0 {
+			C.fprintf(C.stderr, c'eprintln(NIL)\n')
+		} else {
+			C.fprintf(C.stderr, c'%.*s\n', s.len, s.str)
+		}
+	} $else {
+		if s.str == 0 {
+			C.write(2, c'eprintln(NIL)\n', 14)
+		} else {
+			C.write(2, s.str, s.len)
+			C.write(2, c'\n', 1)
+		}
 	}
 	C.fflush(C.stderr)
 }
@@ -93,10 +100,18 @@ pub fn eprintln(s string) {
 pub fn eprint(s string) {
 	C.fflush(C.stdout)
 	C.fflush(C.stderr)
-	if s.str == 0 {
-		C.write(2, c'eprint(NIL)\n', 12)
-	} else {
-		C.write(2, s.str, s.len)
+	$if android {
+		if s.str == 0 {
+			C.fprintf(C.stderr, c'eprint(NIL)')
+		} else {
+			C.fprintf(C.stderr, c'%.*s', s.len, s.str)
+		}
+	} $else {
+		if s.str == 0 {
+			C.write(2, c'eprint(NIL)', 11)
+		} else {
+			C.write(2, s.str, s.len)
+		}
 	}
 	C.fflush(C.stderr)
 }
@@ -104,7 +119,11 @@ pub fn eprint(s string) {
 // print prints a message to stdout. Unlike `println` stdout is not automatically flushed.
 // A call to `flush()` will flush the output buffer to stdout.
 pub fn print(s string) {
-	C.write(1, s.str, s.len)
+	$if android {
+		C.fprintf(C.stdout, c'%.*s', s.len, s.str)
+	} $else {
+		C.write(1, s.str, s.len)
+	}
 }
 
 /*
@@ -170,6 +189,11 @@ pub fn malloc(n int) byteptr {
 			panic('malloc($n) failed')
 		}
 	}
+	$if debug_malloc ? {
+		// Fill in the memory with something != 0, so it is easier to spot
+		// when the calling code wrongly relies on it being zeroed.
+		unsafe { C.memset(res, 0x88, n) }
+	}
 	return res
 }
 
@@ -180,6 +204,7 @@ fn malloc_size(b byteptr) int
 // v_realloc resizes the memory block `b` with `n` bytes.
 // The `b byteptr` must be a pointer to an existing memory block
 // previously allocated with `malloc`, `v_calloc` or `vcalloc`.
+// Please, see also realloc_data, and use it instead if possible.
 [unsafe]
 pub fn v_realloc(b byteptr, n int) byteptr {
 	mut new_ptr := byteptr(0)
@@ -189,29 +214,55 @@ pub fn v_realloc(b byteptr, n int) byteptr {
 			C.memcpy(new_ptr, b, n)
 		}
 	} $else {
-		$if debug_realloc ? {
-			// NB: this is slower, but helps debugging memory problems.
-			// The main idea is to always force reallocating:
-			// 1) allocate a new memory block
-			// 2) copy the old to the new
-			// 3) fill the old with 0x57 (`W`)
-			// 4) free the old block
-			// => if there is still a pointer to the old block somewhere
-			//    it will point to memory that is now filled with 0x57.
-			unsafe {
-				new_ptr = malloc(n)
-				C.memcpy(new_ptr, b, n)
-				C.memset(b, 0x57, n)
-				C.free(b)
-			}
-		} $else {
-			new_ptr = unsafe { C.realloc(b, n) }
-			if new_ptr == 0 {
-				panic('realloc($n) failed')
-			}
+		new_ptr = unsafe { C.realloc(b, n) }
+		if new_ptr == 0 {
+			panic('realloc($n) failed')
 		}
 	}
 	return new_ptr
+}
+
+// realloc_data resizes the memory block pointed by `old_data` to `new_size`
+// bytes. `old_data` must be a pointer to an existing memory block, previously
+// allocated with `malloc`, `v_calloc` or `vcalloc`, of size `old_data`.
+// realloc_data returns a pointer to the new location of the block.
+// NB: if you know the old data size, it is preferable to call `realloc_data`,
+// instead of `v_realloc`, at least during development, because `realloc_data`
+// can make debugging easier, when you compile your program with
+// `-d debug_realloc`.
+[unsafe]
+pub fn realloc_data(old_data byteptr, old_size int, new_size int) byteptr {
+	$if prealloc {
+		unsafe {
+			new_ptr := malloc(new_size)
+			min_size := if old_size < new_size { old_size } else { new_size }
+			C.memcpy(new_ptr, old_data, min_size)
+			return new_ptr
+		}
+	}
+	$if debug_realloc ? {
+		// NB: this is slower, but helps debugging memory problems.
+		// The main idea is to always force reallocating:
+		// 1) allocate a new memory block
+		// 2) copy the old to the new
+		// 3) fill the old with 0x57 (`W`)
+		// 4) free the old block
+		// => if there is still a pointer to the old block somewhere
+		//    it will point to memory that is now filled with 0x57.
+		unsafe {
+			new_ptr := malloc(new_size)
+			min_size := if old_size < new_size { old_size } else { new_size }
+			C.memcpy(new_ptr, old_data, min_size)
+			C.memset(old_data, 0x57, old_size)
+			C.free(old_data)
+			return new_ptr
+		}
+	}
+	nptr := unsafe { C.realloc(old_data, new_size) }
+	if nptr == 0 {
+		panic('realloc_data($old_data, $old_size, $new_size) failed')
+	}
+	return nptr
 }
 
 // v_calloc dynamically allocates a zeroed `n` bytes block of memory on the heap.

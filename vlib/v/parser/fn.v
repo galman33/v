@@ -25,9 +25,15 @@ pub fn (mut p Parser) call_expr(language table.Language, mod string) ast.CallExp
 	mut or_kind := ast.OrKind.absent
 	if fn_name == 'json.decode' {
 		p.expecting_type = true // Makes name_expr() parse the type `User` in `json.decode(User, txt)`
-		p.expr_mod = ''
 		or_kind = .block
 	}
+	//
+	old_expr_mod := p.expr_mod
+	defer {
+		p.expr_mod = old_expr_mod
+	}
+	p.expr_mod = ''
+	//
 	mut generic_types := []table.Type{}
 	mut generic_list_pos := p.tok.position()
 	if p.tok.kind == .lt {
@@ -122,21 +128,21 @@ pub fn (mut p Parser) call_args() []ast.CallArg {
 			p.next()
 			array_decompose = true
 		}
-		mut e := ast.Expr{}
+		mut expr := ast.Expr{}
 		if p.tok.kind == .name && p.peek_tok.kind == .colon {
 			// `foo(key:val, key2:val2)`
-			e = p.struct_init(true) // short_syntax:true
+			expr = p.struct_init(true) // short_syntax:true
 		} else {
-			e = p.expr(0)
+			expr = p.expr(0)
 		}
 		if array_decompose {
-			e = ast.ArrayDecompose{
-				expr: e
+			expr = ast.ArrayDecompose{
+				expr: expr
 				pos: p.tok.position()
 			}
 		}
-		if mut e is ast.StructInit {
-			e.pre_comments << comments
+		if mut expr is ast.StructInit {
+			expr.pre_comments << comments
 			comments = []ast.Comment{}
 		}
 		pos := arg_start_pos.extend(p.prev_tok.position())
@@ -144,7 +150,7 @@ pub fn (mut p Parser) call_args() []ast.CallArg {
 		args << ast.CallArg{
 			is_mut: is_mut
 			share: table.sharetype_from_flags(is_shared, is_atomic)
-			expr: e
+			expr: expr
 			comments: comments
 			pos: pos
 		}
@@ -171,6 +177,7 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 	is_manualfree := p.is_manualfree || p.attrs.contains('manualfree')
 	is_deprecated := p.attrs.contains('deprecated')
 	is_direct_arr := p.attrs.contains('direct_array_access')
+	is_conditional, conditional_ctdefine := p.attrs.has_comptime_define()
 	mut is_unsafe := p.attrs.contains('unsafe')
 	is_pub := p.tok.kind == .key_pub
 	if is_pub {
@@ -278,7 +285,7 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 				name: param.name
 				typ: param.typ
 				is_mut: param.is_mut
-				is_auto_deref: param.is_mut
+				is_auto_deref: param.is_mut || param.is_auto_rec
 				pos: param.pos
 				is_used: true
 				is_arg: true
@@ -296,6 +303,9 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 	mut type_sym_method_idx := 0
 	no_body := p.tok.kind != .lcbr
 	end_pos := p.prev_tok.position()
+	short_fn_name := name
+	is_main := short_fn_name == 'main' && p.mod == 'main'
+	is_test := short_fn_name.starts_with('test_') || short_fn_name.starts_with('testsuite_')
 	// Register
 	if is_method {
 		mut type_sym := p.table.get_type_symbol(rec.typ)
@@ -316,7 +326,6 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 				scope: 0
 			}
 		}
-		// p.warn('reg method $type_sym.name . $name ()')
 		type_sym_method_idx = type_sym.register_method(table.Fn{
 			name: name
 			params: params
@@ -326,6 +335,10 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 			is_pub: is_pub
 			is_deprecated: is_deprecated
 			is_unsafe: is_unsafe
+			is_main: is_main
+			is_test: is_test
+			is_conditional: is_conditional
+			ctdefine: conditional_ctdefine
 			no_body: no_body
 			mod: p.mod
 			attrs: p.attrs
@@ -341,7 +354,6 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 		if !p.pref.translated && language == .v && name in p.table.fns {
 			p.table.redefined_fns << name
 		}
-		// p.warn('reg functn $name ()')
 		p.table.register_fn(table.Fn{
 			name: name
 			params: params
@@ -351,6 +363,10 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 			is_pub: is_pub
 			is_deprecated: is_deprecated
 			is_unsafe: is_unsafe
+			is_main: is_main
+			is_test: is_test
+			is_conditional: is_conditional
+			ctdefine: conditional_ctdefine
 			no_body: no_body
 			mod: p.mod
 			attrs: p.attrs
@@ -388,6 +404,9 @@ fn (mut p Parser) fn_decl() ast.FnDecl {
 		is_direct_arr: is_direct_arr
 		is_pub: is_pub
 		is_variadic: is_variadic
+		is_main: is_main
+		is_test: is_test
+		is_conditional: is_conditional
 		receiver: ast.Field{
 			name: rec.name
 			typ: rec.typ
@@ -463,10 +482,22 @@ fn (mut p Parser) fn_receiver(mut params []table.Param, mut rec ReceiverParsingI
 	if is_atomic {
 		rec.typ = rec.typ.set_flag(.atomic_f)
 	}
+	// optimize method `automatic use fn (a &big_foo) instead of fn (a big_foo)`
+	type_sym := p.table.get_type_symbol(rec.typ)
+	mut is_auto_rec := false
+	if type_sym.kind == .struct_ {
+		info := type_sym.info as table.Struct
+		if !rec.is_mut && !rec.typ.is_ptr() && info.fields.len > 8 {
+			rec.typ = rec.typ.to_ptr()
+			is_auto_rec = true
+		}
+	}
+
 	params << table.Param{
 		pos: rec_start_pos
 		name: rec.name
 		is_mut: rec.is_mut
+		is_auto_rec: is_auto_rec
 		typ: rec.typ
 	}
 	p.check(.rpar)
@@ -529,6 +560,9 @@ fn (mut p Parser) anon_fn() ast.AnonFn {
 	// TODO generics
 	args, _, is_variadic := p.fn_args()
 	for arg in args {
+		if arg.name.len == 0 {
+			p.error_with_pos('use `_` to name an unused parameter', arg.pos)
+		}
 		p.scope.register(ast.Var{
 			name: arg.name
 			typ: arg.typ
@@ -614,7 +648,6 @@ fn (mut p Parser) fn_args() ([]table.Param, bool, bool) {
 		|| p.peek_tok.kind == .dot || p.peek_tok.kind == .rpar
 	// TODO copy pasta, merge 2 branches
 	if types_only {
-		// p.warn('types only')
 		mut arg_no := 1
 		for p.tok.kind != .rpar {
 			if p.tok.kind == .eof {
@@ -759,7 +792,7 @@ fn (mut p Parser) fn_args() ([]table.Param, bool, bool) {
 				}
 			}
 			if is_variadic {
-				typ = table.new_type(p.table.find_or_register_array(typ)).set_flag(.variadic)
+				typ = table.new_type(p.table.find_or_register_array(typ)).derive(typ).set_flag(.variadic)
 			}
 			for i, arg_name in arg_names {
 				args << table.Param{

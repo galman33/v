@@ -63,10 +63,11 @@ pub mut:
 	contents        map[string]DocNode
 	scoped_contents map[string]DocNode
 	// for storing the contents of the file.
-	sources         map[string]string
-	parent_mod_name string
-	orig_mod_name   string
-	extract_vars    bool
+	sources             map[string]string
+	parent_mod_name     string
+	orig_mod_name       string
+	extract_vars        bool
+	filter_symbol_names []string
 }
 
 pub struct DocPos {
@@ -99,6 +100,7 @@ pub fn new_vdoc_preferences() &pref.Preferences {
 	// so its preferences should be permissive:
 	return &pref.Preferences{
 		enable_globals: true
+		is_fmt: true
 	}
 }
 
@@ -129,7 +131,7 @@ pub fn (mut d Doc) stmt(stmt ast.Stmt, filename string) ?DocNode {
 	mut node := DocNode{
 		name: d.stmt_name(stmt)
 		content: d.stmt_signature(stmt)
-		pos: d.convert_pos(filename, stmt.position())
+		pos: d.convert_pos(filename, stmt.pos)
 		file_path: os.join_path(d.base_path, filename)
 		is_pub: d.stmt_pub(stmt)
 	}
@@ -423,15 +425,23 @@ pub fn (mut d Doc) file_asts(file_asts []ast.File) ? {
 			}
 		}
 	}
+	if d.filter_symbol_names.len != 0 && d.contents.len != 0 {
+		for filter_name in d.filter_symbol_names {
+			if filter_name !in d.contents {
+				return error('vdoc: `$filter_name` symbol in module `$d.orig_mod_name` not found')
+			}
+		}
+	}
 	d.time_generated = time.now()
 }
 
 // generate documents a certain file directory and returns an
 // instance of `Doc` if it is successful. Otherwise, it will  throw an error.
-pub fn generate(input_path string, pub_only bool, with_comments bool) ?Doc {
+pub fn generate(input_path string, pub_only bool, with_comments bool, filter_symbol_names ...string) ?Doc {
 	mut doc := new(input_path)
 	doc.pub_only = pub_only
 	doc.with_comments = with_comments
+	doc.filter_symbol_names = filter_symbol_names.filter(it.len != 0)
 	doc.generate() ?
 	return doc
 }

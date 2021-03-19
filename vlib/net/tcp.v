@@ -67,7 +67,13 @@ pub fn (mut c TcpConn) write(bytes []byte) ?int {
 }
 
 // write_str blocks and attempts to write all data
+[deprecated: 'use TcpConn.write_string() instead']
 pub fn (mut c TcpConn) write_str(s string) ?int {
+	return c.write_ptr(s.str, s.len)
+}
+
+// write_string blocks and attempts to write all data
+pub fn (mut c TcpConn) write_string(s string) ?int {
 	return c.write_ptr(s.str, s.len)
 }
 
@@ -157,7 +163,7 @@ pub fn (c &TcpConn) peer_ip() ?string {
 	peeraddr := C.sockaddr_in{}
 	speeraddr := sizeof(peeraddr)
 	socket_error(C.getpeername(c.sock.handle, unsafe { &C.sockaddr(&peeraddr) }, &speeraddr)) ?
-	cstr := charptr(C.inet_ntop(C.AF_INET, &peeraddr.sin_addr, buf, sizeof(buf)))
+	cstr := charptr(C.inet_ntop(SocketFamily.inet, &peeraddr.sin_addr, &buf[0], sizeof(buf)))
 	if cstr == 0 {
 		return error('net.peer_ip: inet_ntop failed')
 	}
@@ -264,7 +270,7 @@ fn new_tcp_socket() ?TcpSocket {
 	// s.set_option_bool(.reuse_addr, true)?
 	s.set_option_int(.reuse_addr, 1) ?
 	$if windows {
-		t := true
+		t := u32(1) // true
 		socket_error(C.ioctlsocket(sockfd, fionbio, &t)) ?
 	} $else {
 		socket_error(C.fcntl(sockfd, C.F_SETFL, C.fcntl(sockfd, C.F_GETFL) | C.O_NONBLOCK)) ?
@@ -279,7 +285,7 @@ fn tcp_socket_from_handle(sockfd int) ?TcpSocket {
 	// s.set_option_bool(.reuse_addr, true)?
 	s.set_option_int(.reuse_addr, 1) ?
 	$if windows {
-		t := true
+		t := u32(1) // true
 		socket_error(C.ioctlsocket(sockfd, fionbio, &t)) ?
 	} $else {
 		socket_error(C.fcntl(sockfd, C.F_SETFL, C.fcntl(sockfd, C.F_GETFL) | C.O_NONBLOCK)) ?
@@ -295,7 +301,8 @@ pub fn (mut s TcpSocket) set_option_bool(opt SocketOption, value bool) ? {
 	// if opt !in opts_bool {
 	// 	return err_option_wrong_type
 	// }
-	socket_error(C.setsockopt(s.handle, C.SOL_SOCKET, int(opt), &value, sizeof(bool))) ?
+	x := int(value)
+	socket_error(C.setsockopt(s.handle, C.SOL_SOCKET, int(opt), &x, sizeof(int))) ?
 	return none
 }
 

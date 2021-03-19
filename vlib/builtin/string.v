@@ -316,11 +316,11 @@ fn (a RepIndex) < (b RepIndex) bool {
 // Example: assert 'ABCD'.replace_each(['B','C/','C','D','D','C']) == 'AC/DC'
 pub fn (s string) replace_each(vals []string) string {
 	if s.len == 0 || vals.len == 0 {
-		return s
+		return s.clone()
 	}
 	if vals.len % 2 != 0 {
 		println('string.replace_each(): odd number of strings')
-		return s
+		return s.clone()
 	}
 	// `rep` - string to replace
 	// `with` - string to replace with
@@ -350,7 +350,7 @@ pub fn (s string) replace_each(vals []string) string {
 	}
 	// Dont change the string if there's nothing to replace
 	if idxs.len == 0 {
-		return s
+		return s.clone()
 	}
 	idxs.sort2()
 	mut b := unsafe { malloc(new_len + 1) } // add a \0 just in case
@@ -530,40 +530,70 @@ pub fn (s string) split(delim string) []string {
 pub fn (s string) split_nth(delim string, nth int) []string {
 	mut res := []string{}
 	mut i := 0
-	if delim.len == 0 {
-		i = 1
-		for ch in s {
-			if nth > 0 && i >= nth {
-				res << s[i..]
-				break
+
+	match delim.len {
+		0 {
+			i = 1
+			for ch in s {
+				if nth > 0 && i >= nth {
+					res << s[i..]
+					break
+				}
+				res << ch.ascii_str()
+				i++
 			}
-			res << ch.ascii_str()
-			i++
+			return res
 		}
-		return res
-	}
-	mut start := 0
-	// Take the left part for each delimiter occurence
-	for i <= s.len {
-		is_delim := i + delim.len <= s.len && s.substr(i, i + delim.len) == delim
-		if is_delim {
-			val := s.substr(start, i)
-			was_last := nth > 0 && res.len == nth - 1
-			if was_last {
-				break
+		1 {
+			mut start := 0
+			delim_byte := delim[0]
+
+			for i < s.len {
+				if s[i] == delim_byte {
+					was_last := nth > 0 && res.len == nth - 1
+					if was_last {
+						break
+					}
+					val := s.substr(start, i)
+					res << val
+					start = i + delim.len
+					i = start
+				} else {
+					i++
+				}
 			}
-			res << val
-			start = i + delim.len
-			i = start
-		} else {
-			i++
+
+			// Then the remaining right part of the string
+			if nth < 1 || res.len < nth {
+				res << s[start..]
+			}
+			return res
+		}
+		else {
+			mut start := 0
+			// Take the left part for each delimiter occurence
+			for i <= s.len {
+				is_delim := i + delim.len <= s.len && s.substr(i, i + delim.len) == delim
+				if is_delim {
+					was_last := nth > 0 && res.len == nth - 1
+					if was_last {
+						break
+					}
+					val := s.substr(start, i)
+					res << val
+					start = i + delim.len
+					i = start
+				} else {
+					i++
+				}
+			}
+			// Then the remaining right part of the string
+			if nth < 1 || res.len < nth {
+				res << s[start..]
+			}
+			return res
 		}
 	}
-	// Then the remaining right part of the string
-	if nth < 1 || res.len < nth {
-		res << s[start..]
-	}
-	return res
 }
 
 // split_into_lines splits the string by newline characters.
@@ -605,6 +635,14 @@ fn (s string) substr2(start int, _end int, end_max bool) string {
 pub fn (s string) substr(start int, end int) string {
 	$if !no_bounds_checking ? {
 		if start > end || start > s.len || end > s.len || start < 0 || end < 0 {
+			/*
+			$if debug {
+					println('substr($start, $end) out of bounds (len=$s.len)')
+					println('s="$s"')
+					print_backtrace()
+					return ''
+			}
+			*/
 			panic('substr($start, $end) out of bounds (len=$s.len)')
 		}
 	}
@@ -796,7 +834,21 @@ pub fn (s string) count(substr string) int {
 	if substr.len > s.len {
 		return 0
 	}
+
 	mut n := 0
+
+	if substr.len == 1 {
+		target := substr[0]
+
+		for letter in s {
+			if letter == target {
+				n++
+			}
+		}
+
+		return n
+	}
+
 	mut i := 0
 	for {
 		i = s.index_after(substr, i)
@@ -877,6 +929,7 @@ pub fn (s string) to_lower() string {
 		for i in 0 .. s.len {
 			b[i] = byte(C.tolower(s.str[i]))
 		}
+		b[s.len] = 0
 		return tos(b, s.len)
 	}
 }
@@ -900,6 +953,7 @@ pub fn (s string) to_upper() string {
 		for i in 0 .. s.len {
 			b[i] = byte(C.toupper(s.str[i]))
 		}
+		b[s.len] = 0
 		return tos(b, s.len)
 	}
 }
@@ -1010,21 +1064,26 @@ pub fn (s string) trim_space() string {
 // Example: assert ' ffHello V ffff'.trim(' f') == 'Hello V'
 pub fn (s string) trim(cutset string) string {
 	if s.len < 1 || cutset.len < 1 {
-		return s
+		return s.clone()
 	}
-	cs_arr := cutset.bytes()
 	mut pos_left := 0
 	mut pos_right := s.len - 1
 	mut cs_match := true
 	for pos_left <= s.len && pos_right >= -1 && cs_match {
 		cs_match = false
-		if s[pos_left] in cs_arr {
-			pos_left++
-			cs_match = true
+		for cs in cutset {
+			if s[pos_left] == cs {
+				pos_left++
+				cs_match = true
+				break
+			}
 		}
-		if s[pos_right] in cs_arr {
-			pos_right--
-			cs_match = true
+		for cs in cutset {
+			if s[pos_right] == cs {
+				pos_right--
+				cs_match = true
+				break
+			}
 		}
 		if pos_left > pos_right {
 			return ''
@@ -1037,11 +1096,20 @@ pub fn (s string) trim(cutset string) string {
 // Example: assert 'd Hello V developer'.trim_left(' d') == 'Hello V developer'
 pub fn (s string) trim_left(cutset string) string {
 	if s.len < 1 || cutset.len < 1 {
-		return s
+		return s.clone()
 	}
-	cs_arr := cutset.bytes()
 	mut pos := 0
-	for pos < s.len && s[pos] in cs_arr {
+	for pos < s.len {
+		mut found := false
+		for cs in cutset {
+			if s[pos] == cs {
+				found = true
+				break
+			}
+		}
+		if !found {
+			break
+		}
 		pos++
 	}
 	return s[pos..]
@@ -1051,11 +1119,19 @@ pub fn (s string) trim_left(cutset string) string {
 // Example: assert ' Hello V d'.trim_right(' d') == ' Hello V'
 pub fn (s string) trim_right(cutset string) string {
 	if s.len < 1 || cutset.len < 1 {
-		return s
+		return s.clone()
 	}
-	cs_arr := cutset.bytes()
 	mut pos := s.len - 1
-	for pos >= 0 && s[pos] in cs_arr {
+	for pos >= 0 {
+		mut found := false
+		for cs in cutset {
+			if s[pos] == cs {
+				found = true
+			}
+		}
+		if !found {
+			break
+		}
 		pos--
 	}
 	return if pos < 0 { '' } else { s[..pos + 1] }
@@ -1067,7 +1143,7 @@ pub fn (s string) trim_prefix(str string) string {
 	if s.starts_with(str) {
 		return s[str.len..]
 	}
-	return s
+	return s.clone()
 }
 
 // trim_suffix strips `str` from the end of the string.
@@ -1076,7 +1152,7 @@ pub fn (s string) trim_suffix(str string) string {
 	if s.ends_with(str) {
 		return s[..s.len - str.len]
 	}
-	return s
+	return s.clone()
 }
 
 // compare_strings returns `-1` if `a < b`, `1` if `a > b` else `0`.
@@ -1134,9 +1210,9 @@ pub fn (mut s []string) sort_by_len() {
 	s.sort_with_compare(compare_strings_by_len)
 }
 
-// str returns the string itself.
+// str returns a copy of the string
 pub fn (s string) str() string {
-	return s
+	return s.clone()
 }
 
 // str returns the string itself.
@@ -1412,7 +1488,7 @@ pub fn (s &string) free() {
 pub fn (s string) before(dot string) string {
 	pos := s.index_(dot)
 	if pos == -1 {
-		return s
+		return s.clone()
 	}
 	return s[..pos]
 }
@@ -1423,7 +1499,7 @@ pub fn (s string) all_before(dot string) string {
 	// TODO remove dup method
 	pos := s.index_(dot)
 	if pos == -1 {
-		return s
+		return s.clone()
 	}
 	return s[..pos]
 }
@@ -1433,7 +1509,7 @@ pub fn (s string) all_before(dot string) string {
 pub fn (s string) all_before_last(dot string) string {
 	pos := s.last_index_(dot)
 	if pos == -1 {
-		return s
+		return s.clone()
 	}
 	return s[..pos]
 }
@@ -1443,7 +1519,7 @@ pub fn (s string) all_before_last(dot string) string {
 pub fn (s string) all_after(dot string) string {
 	pos := s.index_(dot)
 	if pos == -1 {
-		return s
+		return s.clone()
 	}
 	return s[pos + dot.len..]
 }
@@ -1453,7 +1529,7 @@ pub fn (s string) all_after(dot string) string {
 pub fn (s string) all_after_last(dot string) string {
 	pos := s.last_index_(dot)
 	if pos == -1 {
-		return s
+		return s.clone()
 	}
 	return s[pos + dot.len..]
 }
@@ -1475,7 +1551,7 @@ pub fn (s string) after_char(dot byte) string {
 		}
 	}
 	if pos == 0 {
-		return s
+		return s.clone()
 	}
 	return s[pos + 1..]
 }
@@ -1532,7 +1608,7 @@ pub fn (s []string) join_lines() string {
 // Example: assert 'Hello V'.reverse() == 'V olleH'
 pub fn (s string) reverse() string {
 	if s.len == 0 || s.len == 1 {
-		return s
+		return s.clone()
 	}
 	mut res := string{
 		str: unsafe { malloc(s.len) }
@@ -1552,7 +1628,7 @@ pub fn (s string) reverse() string {
 pub fn (s string) limit(max int) string {
 	u := s.ustring()
 	if u.len <= max {
-		return s
+		return s.clone()
 	}
 	return u.substr(0, max)
 }
@@ -1586,7 +1662,7 @@ pub fn (s string) repeat(count int) string {
 	} else if count == 0 {
 		return ''
 	} else if count == 1 {
-		return s
+		return s.clone()
 	}
 	mut ret := unsafe { malloc(s.len * count + 1) }
 	for i in 0 .. count {
@@ -1606,8 +1682,34 @@ pub fn (s string) repeat(count int) string {
 // fields returns a string array of the string split by `\t` and ` `
 // Example: assert '\t\tv = v'.fields() == ['', '', 'v', '=', 'v']
 pub fn (s string) fields() []string {
-	// TODO do this in a better way
-	return s.replace('\t', ' ').split(' ')
+	mut res := []string{}
+	mut word_start := 0
+	mut word_len := 0
+	mut is_in_word := false
+	mut is_space := false
+	for i, c in s {
+		is_space = c in [` `, `\t`, `\n`]
+		if !is_space {
+			word_len++
+		}
+		if !is_in_word && !is_space {
+			word_start = i
+			is_in_word = true
+			continue
+		}
+		if is_space && is_in_word {
+			res << s[word_start..word_start + word_len]
+			is_in_word = false
+			word_len = 0
+			word_start = 0
+			continue
+		}
+	}
+	if is_in_word && word_len > 0 {
+		// collect the remainder word at the end
+		res << s[word_start..s.len]
+	}
+	return res
 }
 
 // strip_margin allows multi-line strings to be formatted in a way that removes white-space
@@ -1674,31 +1776,8 @@ pub fn (s string) strip_margin_custom(del byte) string {
 
 // split_by_whitespace - extract only the non whitespace tokens/words from the given string `s`.
 // example: '  sss   ssss'.split_by_whitespace() => ['sss', 'ssss']
+
+[deprecated: 'use string.fields() instead']
 pub fn (s string) split_by_whitespace() []string {
-	mut res := []string{}
-	mut word_start := 0
-	mut word_end := 0
-	mut is_in_word := false
-	mut is_space := false
-	for i, c in s {
-		is_space = c in [` `, `\t`, `\n`]
-		if !is_in_word && !is_space {
-			word_start = i
-			is_in_word = true
-			continue
-		}
-		if is_space && is_in_word {
-			word_end = i
-			res << s[word_start..word_end]
-			is_in_word = false
-			word_end = 0
-			word_start = 0
-			continue
-		}
-	}
-	if is_in_word && word_start > 0 {
-		// collect the remainder word at the end
-		res << s[word_start..s.len]
-	}
-	return res
+	return s.fields()
 }

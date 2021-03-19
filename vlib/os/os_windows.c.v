@@ -221,10 +221,13 @@ pub fn get_error_msg(code int) string {
 	return unsafe { string_from_wide(ptr_text) }
 }
 
-// exec starts the specified command, waits for it to complete, and returns its output.
-pub fn exec(cmd string) ?Result {
+// execute starts the specified command, waits for it to complete, and returns its output.
+pub fn execute(cmd string) Result {
 	if cmd.contains(';') || cmd.contains('&&') || cmd.contains('||') || cmd.contains('\n') {
-		return error(';, &&, || and \\n are not allowed in shell commands')
+		return Result{
+			exit_code: -1
+			output: ';, &&, || and \\n are not allowed in shell commands'
+		}
 	}
 	mut child_stdin := &u32(0)
 	mut child_stdout_read := &u32(0)
@@ -237,14 +240,20 @@ pub fn exec(cmd string) ?Result {
 	if !create_pipe_ok {
 		error_num := int(C.GetLastError())
 		error_msg := get_error_msg(error_num)
-		return error_with_code('exec failed (CreatePipe): $error_msg', error_num)
+		return Result{
+			exit_code: error_num
+			output: 'exec failed (CreatePipe): $error_msg'
+		}
 	}
 	set_handle_info_ok := C.SetHandleInformation(child_stdout_read, C.HANDLE_FLAG_INHERIT,
 		0)
 	if !set_handle_info_ok {
 		error_num := int(C.GetLastError())
 		error_msg := get_error_msg(error_num)
-		return error_with_code('exec failed (SetHandleInformation): $error_msg', error_num)
+		return Result{
+			exit_code: error_num
+			output: 'exec failed (SetHandleInformation): $error_msg'
+		}
 	}
 	proc_info := ProcessInformation{}
 	start_info := StartupInfo{
@@ -259,13 +268,15 @@ pub fn exec(cmd string) ?Result {
 	}
 	command_line := [32768]u16{}
 	C.ExpandEnvironmentStringsW(cmd.to_wide(), voidptr(&command_line), 32768)
-	create_process_ok := C.CreateProcessW(0, command_line, 0, 0, C.TRUE, 0, 0, 0, voidptr(&start_info),
-		voidptr(&proc_info))
+	create_process_ok := C.CreateProcessW(0, &command_line[0], 0, 0, C.TRUE, 0, 0, 0,
+		voidptr(&start_info), voidptr(&proc_info))
 	if !create_process_ok {
 		error_num := int(C.GetLastError())
 		error_msg := get_error_msg(error_num)
-		return error_with_code('exec failed (CreateProcess) with code $error_num: $error_msg cmd: $cmd',
-			error_num)
+		return Result{
+			exit_code: error_num
+			output: 'exec failed (CreateProcess) with code $error_num: $error_msg cmd: $cmd'
+		}
 	}
 	C.CloseHandle(child_stdin)
 	C.CloseHandle(child_stdout_write)
@@ -275,7 +286,8 @@ pub fn exec(cmd string) ?Result {
 	for {
 		mut result := false
 		unsafe {
-			result = C.ReadFile(child_stdout_read, buf, 1000, voidptr(&bytes_read), 0)
+			result = C.ReadFile(child_stdout_read, &buf[0], 1000, voidptr(&bytes_read),
+				0)
 			read_data.write_bytes(&buf[0], int(bytes_read))
 		}
 		if result == false || int(bytes_read) == 0 {

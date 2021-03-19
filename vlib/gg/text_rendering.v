@@ -107,8 +107,11 @@ fn new_ft(c FTConfig) ?&FT {
 			return none
 		}
 	}
-	bold_path := if c.custom_bold_font_path != '' { c.custom_bold_font_path } else { get_font_path_variant(c.font_path,
-			.bold) }
+	bold_path := if c.custom_bold_font_path != '' {
+		c.custom_bold_font_path
+	} else {
+		get_font_path_variant(c.font_path, .bold)
+	}
 	bytes_bold := os.read_bytes(bold_path) or {
 		debug_font_println('failed to load font "$bold_path"')
 		bytes
@@ -212,7 +215,7 @@ pub fn (ctx &Context) text_width(s string) int {
 		return 0
 	}
 	mut buf := [4]f32{}
-	C.fonsTextBounds(ctx.ft.fons, 0, 0, s.str, 0, buf)
+	C.fonsTextBounds(ctx.ft.fons, 0, 0, s.str, 0, &buf[0])
 	if s.ends_with(' ') {
 		return int((buf[2] - buf[0]) / ctx.scale) +
 			ctx.text_width('i') // TODO fix this in fontstash?
@@ -233,7 +236,7 @@ pub fn (ctx &Context) text_height(s string) int {
 		return 0
 	}
 	mut buf := [4]f32{}
-	C.fonsTextBounds(ctx.ft.fons, 0, 0, s.str, 0, buf)
+	C.fonsTextBounds(ctx.ft.fons, 0, 0, s.str, 0, &buf[0])
 	return int((buf[3] - buf[1]) / ctx.scale)
 }
 
@@ -243,7 +246,7 @@ pub fn (ctx &Context) text_size(s string) (int, int) {
 		return 0, 0
 	}
 	mut buf := [4]f32{}
-	C.fonsTextBounds(ctx.ft.fons, 0, 0, s.str, 0, buf)
+	C.fonsTextBounds(ctx.ft.fons, 0, 0, s.str, 0, &buf[0])
 	return int((buf[2] - buf[0]) / ctx.scale), int((buf[3] - buf[1]) / ctx.scale)
 }
 
@@ -290,7 +293,10 @@ pub fn system_font_path() string {
 			}
 		}
 	}
-	s := os.exec('fc-list') or { panic('failed to fetch system fonts') }
+	s := os.execute('fc-list')
+	if s.exit_code != 0 {
+		panic('failed to fetch system fonts')
+	}
 	system_fonts := s.output.split('\n')
 	for line in system_fonts {
 		for font in fonts {

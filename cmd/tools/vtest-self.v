@@ -21,6 +21,7 @@ const (
 		'vlib/vweb/request_test.v',
 		'vlib/vweb/route_test.v',
 		'vlib/x/websocket/websocket_test.v',
+		'vlib/crypto/rand/crypto_rand_read_test.v',
 	]
 	skip_with_fsanitize_address   = [
 		'vlib/encoding/base64/base64_test.v',
@@ -32,10 +33,8 @@ const (
 	]
 	skip_with_fsanitize_undefined = []string{}
 	skip_with_werror              = [
-		'vlib/builtin/array_test.v',
+		'vlib/sync/array_rlock_test.v',
 		'vlib/clipboard/clipboard_test.v',
-		'vlib/dl/dl_test.v',
-		'vlib/dl/example/use_test.v',
 		'vlib/eventbus/eventbus_test.v',
 		'vlib/gx/color_test.v',
 		'vlib/json/json_test.v',
@@ -206,7 +205,7 @@ fn main() {
 	args := os.args.clone()
 	args_string := args[1..].join(' ')
 	cmd_prefix := args_string.all_before('test-self')
-	title := 'testing all tests'
+	title := 'testing vlib'
 	all_test_files := os.walk_ext(os.join_path(vroot, 'vlib'), '_test.v')
 	testing.eheader(title)
 	mut tsession := testing.new_test_session(cmd_prefix)
