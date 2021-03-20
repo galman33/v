@@ -5,17 +5,6 @@ module time
 fn C.QueryPerformanceCounter(&u64) C.BOOL
 fn C.QueryPerformanceFrequency(&u64) C.BOOL
 
-fn C.tzset()
-
-fn C._get_timezone(mut seconds &u64) int
-
-pub fn lol() {
-	C.tzset()
-	mut seconds := u64(0)
-	C._get_timezone(mut &seconds)
-	println(seconds)
-}
-
 const (
 	// start_time is needed on Darwin and Windows because of potential overflows
 	start_time       = init_win_time_start()
