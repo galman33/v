@@ -5,6 +5,12 @@ module time
 fn C.QueryPerformanceCounter(&u64) C.BOOL
 fn C.QueryPerformanceFrequency(&u64) C.BOOL
 
+// C.timeval represents a C time value.
+pub struct C.timeval {
+	tv_sec  u64
+	tv_usec u64
+}
+
 const (
 	// start_time is needed on Darwin and Windows because of potential overflows
 	start_time       = init_win_time_start()
